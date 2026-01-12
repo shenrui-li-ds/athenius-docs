@@ -53,6 +53,7 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
 
   const entitiesEnabled = file.entities_enabled || false;
   const entitiesStatus = file.entities_status;
+  const entitiesProgress = file.entities_progress ?? 0;
   const isEntitiesProcessing = entitiesStatus === 'pending' || entitiesStatus === 'processing';
 
   const handleToggleEntities = async (e: React.MouseEvent) => {
@@ -99,6 +100,20 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
           {isReady && ` • ${file.chunk_count} chunks`}
           {entitiesEnabled && entitiesStatus === 'ready' && ' • Entities'}
         </p>
+        {/* Progress bar during extraction - shown on its own line */}
+        {isEntitiesProcessing && (
+          <div className="flex items-center gap-2 mt-1.5">
+            <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full max-w-[200px]">
+              <div
+                className="h-full bg-purple-500 transition-all duration-300"
+                style={{ width: `${entitiesProgress}%` }}
+              />
+            </div>
+            <span className="text-xs text-purple-600 dark:text-purple-400 whitespace-nowrap">
+              Analyzing {entitiesProgress}%
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Entity toggle button - only show for ready files */}
@@ -115,13 +130,13 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
           `}
           title={
             isEntitiesProcessing
-              ? 'Extracting entities...'
+              ? `Extracting entities... ${entitiesProgress}%`
               : entitiesEnabled
               ? 'Deep Analysis enabled (click to disable)'
               : 'Enable Deep Analysis for better multi-hop reasoning'
           }
         >
-          {isTogglingEntities || isEntitiesProcessing ? (
+          {isTogglingEntities ? (
             <span className="block h-4 w-4 animate-spin border-2 border-current border-t-transparent rounded-full" />
           ) : (
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

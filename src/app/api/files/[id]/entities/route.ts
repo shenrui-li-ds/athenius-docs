@@ -105,18 +105,19 @@ export async function POST(
       );
     }
 
-    // Start entity extraction (runs in background but we wait for completion)
-    // In production, this could be moved to a background job
+    // Start entity extraction in background (don't await)
+    // This allows the API to return immediately so UI can show progress
     console.log(`Starting entity extraction for file ${fileId}`);
-    await enableEntityExtraction(fileId, user.id);
 
-    // Get stats after completion
-    const stats = await getFileEntityStats(fileId);
+    // Fire and forget - extraction runs in background
+    enableEntityExtraction(fileId, user.id).catch((err) => {
+      console.error(`Background entity extraction failed for ${fileId}:`, err);
+    });
 
     return NextResponse.json({
       success: true,
-      message: 'Entity extraction completed',
-      stats,
+      message: 'Entity extraction started',
+      status: 'processing',
     });
   } catch (error) {
     console.error('Enable entities error:', error);

@@ -14,6 +14,7 @@ import {
   storeRelationships,
   storeMentions,
   updateEntityStatus,
+  updateEntityProgress,
   getFileChunkIds,
   deleteFileEntities,
 } from './storage';
@@ -26,11 +27,14 @@ import type {
 
 // Use Gemini for entity extraction
 const EXTRACTION_MODEL = 'gemini-3-flash-preview';
-const BATCH_SIZE = 3; // Number of chunks to process together
+const BATCH_SIZE = 3; // Number of chunks to process together (keep small to avoid token limits)
+const PARALLEL_BATCHES = 4; // More parallel batches to compensate for smaller batch size
 const MAX_RETRIES = 2;
+const MAX_OUTPUT_TOKENS = 4096; // Enough for entity extraction from batch
 
 /**
  * Extract entities and relationships from all chunks of a file
+ * Uses parallel batch processing for speed with progress tracking
  */
 export async function extractEntitiesFromFile(
   fileId: string,
@@ -39,7 +43,7 @@ export async function extractEntitiesFromFile(
   const supabase = createAdminClient();
 
   try {
-    // Update status to processing
+    // Update status to processing with 0% progress
     await updateEntityStatus(supabase, fileId, 'processing');
 
     // Get all chunks for the file
@@ -58,64 +62,97 @@ export async function extractEntitiesFromFile(
     const globalEntityMap = new Map<string, string>();
     let totalEntities = 0;
     let totalRelationships = 0;
+    let processedBatches = 0;
 
-    // Process chunks in batches
+    // Split chunks into batches
+    const batches: typeof chunks[] = [];
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-      const batch = chunks.slice(i, i + BATCH_SIZE);
-      console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)}`);
+      batches.push(chunks.slice(i, i + BATCH_SIZE));
+    }
+    const totalBatches = batches.length;
 
-      // Combine batch content for single LLM call
-      const combinedContent = batch
-        .map((c, idx) => `[Chunk ${c.chunk_index}]\n${c.content}`)
-        .join('\n\n---\n\n');
+    // Process batches in parallel groups for speed
+    for (let i = 0; i < batches.length; i += PARALLEL_BATCHES) {
+      // Check if file still exists (user might have deleted it mid-extraction)
+      const { data: fileCheck } = await supabase
+        .from('file_uploads')
+        .select('id')
+        .eq('id', fileId)
+        .maybeSingle();
 
-      // Extract entities from batch
-      const result = await extractEntitiesFromText(combinedContent);
+      if (!fileCheck) {
+        console.log(`File ${fileId} was deleted, stopping extraction`);
+        return { entityCount: totalEntities, relationshipCount: totalRelationships };
+      }
 
-      if (result.entities.length > 0) {
-        // Store entities and get ID mapping
-        const batchEntityMap = await storeEntities(
-          supabase,
-          fileId,
-          userId,
-          result.entities,
-          batch[0].chunk_index
-        );
+      const parallelBatches = batches.slice(i, i + PARALLEL_BATCHES);
+      console.log(`Processing batches ${i + 1}-${Math.min(i + PARALLEL_BATCHES, totalBatches)}/${totalBatches}`);
 
-        // Merge into global map
-        for (const [name, id] of batchEntityMap) {
-          globalEntityMap.set(name, id);
-        }
+      // Process multiple batches in parallel
+      const batchResults = await Promise.all(
+        parallelBatches.map(async (batch) => {
+          // Combine batch content for single LLM call
+          const combinedContent = batch
+            .map((c) => `[Chunk ${c.chunk_index}]\n${c.content}`)
+            .join('\n\n---\n\n');
 
-        totalEntities += result.entities.length;
+          // Extract entities from batch
+          const result = await extractEntitiesFromText(combinedContent);
+          return { batch, result };
+        })
+      );
 
-        // Store relationships
-        if (result.relationships.length > 0) {
-          // Use first chunk ID as evidence (simplification)
-          await storeRelationships(
+      // Store results sequentially (to avoid race conditions on entity map)
+      for (const { batch, result } of batchResults) {
+        if (result.entities.length > 0) {
+          // Store entities and get ID mapping
+          const batchEntityMap = await storeEntities(
             supabase,
             fileId,
-            result.relationships,
-            globalEntityMap,
-            batch[0].id
+            userId,
+            result.entities,
+            batch[0].chunk_index
           );
-          totalRelationships += result.relationships.length;
-        }
 
-        // Store mentions for each chunk
-        for (const chunk of batch) {
-          const mentionedNames = findMentionedEntities(chunk.content, result.entities);
-          if (mentionedNames.length > 0) {
-            await storeMentions(
+          // Merge into global map
+          for (const [name, id] of batchEntityMap) {
+            globalEntityMap.set(name, id);
+          }
+
+          totalEntities += result.entities.length;
+
+          // Store relationships
+          if (result.relationships.length > 0) {
+            await storeRelationships(
               supabase,
-              chunk.id,
-              chunk.content,
+              fileId,
+              result.relationships,
               globalEntityMap,
-              mentionedNames
+              batch[0].id
             );
+            totalRelationships += result.relationships.length;
+          }
+
+          // Store mentions for each chunk
+          for (const chunk of batch) {
+            const mentionedNames = findMentionedEntities(chunk.content, result.entities);
+            if (mentionedNames.length > 0) {
+              await storeMentions(
+                supabase,
+                chunk.id,
+                chunk.content,
+                globalEntityMap,
+                mentionedNames
+              );
+            }
           }
         }
+        processedBatches++;
       }
+
+      // Update progress after each parallel group
+      const progress = Math.round((processedBatches / totalBatches) * 100);
+      await updateEntityProgress(supabase, fileId, progress);
     }
 
     // Update status to ready
@@ -149,7 +186,7 @@ async function extractEntitiesFromText(
       relationships?: unknown[];
     }>(messages, EXTRACTION_MODEL, {
       temperature: 0.1, // Low temperature for consistent extraction
-      maxOutputTokens: 2000,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
     });
 
     return {

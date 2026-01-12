@@ -29,10 +29,14 @@ export function DocsApp({ user }: DocsAppProps) {
     fetchFiles();
   }, []);
 
-  // Poll for file status updates
+  // Poll for file status updates (including entity extraction progress)
   useEffect(() => {
     const processingFiles = files.filter(
-      (f) => f.status === 'pending' || f.status === 'processing'
+      (f) =>
+        f.status === 'pending' ||
+        f.status === 'processing' ||
+        f.entities_status === 'pending' ||
+        f.entities_status === 'processing'
     );
 
     if (processingFiles.length === 0) return;
@@ -131,7 +135,7 @@ export function DocsApp({ user }: DocsAppProps) {
   const handleToggleEntities = async (fileId: string, enabled: boolean) => {
     try {
       if (enabled) {
-        // Enable entity extraction
+        // Enable entity extraction (starts in background)
         const response = await fetch(`/api/files/${fileId}/entities`, {
           method: 'POST',
         });
@@ -140,6 +144,10 @@ export function DocsApp({ user }: DocsAppProps) {
           const error = await response.json();
           throw new Error(error.error || 'Failed to enable entity extraction');
         }
+
+        // Immediately refresh to show processing status
+        // The polling mechanism will pick up progress updates
+        await fetchFiles();
       } else {
         // Disable entity extraction
         const response = await fetch(`/api/files/${fileId}/entities`, {
@@ -150,10 +158,10 @@ export function DocsApp({ user }: DocsAppProps) {
           const error = await response.json();
           throw new Error(error.error || 'Failed to disable entity extraction');
         }
-      }
 
-      // Refresh file list to get updated entity status
-      await fetchFiles();
+        // Refresh file list to get updated entity status
+        await fetchFiles();
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Entity operation failed');
     }
@@ -290,6 +298,19 @@ export function DocsApp({ user }: DocsAppProps) {
                     {selectedFileIds.length} selected
                   </span>
                 )}
+              </div>
+
+              {/* Deep Analysis hint */}
+              <div className="mb-3 p-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                <p className="text-xs text-purple-700 dark:text-purple-300">
+                  <span className="inline-flex items-center gap-1">
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <strong>Deep Analysis:</strong>
+                  </span>{' '}
+                  Click the lightning bolt on any file to enable entity extraction for better multi-hop reasoning (e.g., character relationships in novels).
+                </p>
               </div>
 
               {isLoadingFiles ? (

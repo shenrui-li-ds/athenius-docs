@@ -37,13 +37,13 @@ Return valid JSON with this structure:
   ]
 }`;
 
-export const ENTITY_EXTRACTION_USER_PROMPT = `Extract all named entities and their relationships from the following text chunk.
+export const ENTITY_EXTRACTION_USER_PROMPT = `Extract all named entities and their relationships from the following text.
 
 <text>
 {content}
 </text>
 
-Return only valid JSON matching the specified format. Do not include any explanation or markdown formatting.`;
+Return only valid JSON matching the specified format. Keep descriptions brief (1-2 sentences max).`;
 
 export const QUERY_ENTITY_EXTRACTION_PROMPT = `Extract the named entities mentioned in this query. Only extract entities that are specifically named, not generic concepts.
 

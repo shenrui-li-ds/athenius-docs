@@ -206,8 +206,101 @@ export async function callGeminiJSON<T = unknown>(
   try {
     return JSON.parse(content) as T;
   } catch {
-    throw new Error(`Failed to parse Gemini JSON response: ${content}`);
+    // Try to salvage truncated JSON by finding the last complete object
+    const salvaged = tryRepairJSON(content);
+    if (salvaged) {
+      console.warn('Salvaged truncated JSON response from Gemini');
+      return salvaged as T;
+    }
+    throw new Error(`Failed to parse Gemini JSON response: ${content.slice(0, 200)}...`);
   }
+}
+
+/**
+ * Attempt to repair truncated JSON by finding valid partial structure
+ */
+function tryRepairJSON(content: string): unknown | null {
+  const trimmed = content.trim();
+
+  // Strategy 1: Find the last complete entity in the entities array
+  // Look for the pattern: complete objects in entities array
+  const entitiesStartMatch = trimmed.match(/"entities"\s*:\s*\[/);
+  if (entitiesStartMatch) {
+    const startIdx = entitiesStartMatch.index! + entitiesStartMatch[0].length;
+    const entitiesContent = trimmed.slice(startIdx);
+
+    // Find all complete objects by matching balanced braces
+    const completeEntities: string[] = [];
+    let depth = 0;
+    let currentStart = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < entitiesContent.length; i++) {
+      const char = entitiesContent[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (char === '{') {
+        if (depth === 0) currentStart = i;
+        depth++;
+      } else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          // Found a complete object
+          completeEntities.push(entitiesContent.slice(currentStart, i + 1));
+        }
+      }
+    }
+
+    if (completeEntities.length > 0) {
+      try {
+        const entitiesArray = JSON.parse('[' + completeEntities.join(',') + ']');
+        return { entities: entitiesArray, relationships: [] };
+      } catch {
+        // Continue to other strategies
+      }
+    }
+  }
+
+  // Strategy 2: Try simple bracket closing
+  for (const suffix of [']}', '}]}', '"]}', '"}]}', ']]}', '"]}]']) {
+    try {
+      return JSON.parse(trimmed + suffix);
+    } catch {
+      // Continue
+    }
+  }
+
+  // Strategy 3: Remove trailing incomplete content and close
+  const lastCompleteObject = trimmed.lastIndexOf('},');
+  if (lastCompleteObject > 0) {
+    const truncated = trimmed.slice(0, lastCompleteObject + 1);
+    for (const suffix of [']}', ']}]', '],"relationships":[]}']) {
+      try {
+        return JSON.parse(truncated + suffix);
+      } catch {
+        // Continue
+      }
+    }
+  }
+
+  return null;
 }
 
 export type EmbeddingTaskType =

@@ -24,6 +24,7 @@ export interface FileUpload {
   // Phase 3: Entity extraction fields
   entities_enabled?: boolean;
   entities_status?: 'pending' | 'processing' | 'ready' | 'error' | null;
+  entities_progress?: number | null; // 0-100 percentage during extraction
 }
 
 // File chunk record (matches database schema)

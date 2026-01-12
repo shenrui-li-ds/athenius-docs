@@ -205,6 +205,13 @@ export async function updateEntityStatus(
 ): Promise<void> {
   const updates: Record<string, unknown> = { entities_status: status };
 
+  // Reset progress when starting or completing
+  if (status === 'pending') {
+    updates.entities_progress = 0;
+  } else if (status === 'ready' || status === 'error') {
+    updates.entities_progress = status === 'ready' ? 100 : null;
+  }
+
   if (errorMessage) {
     // Could store error in a separate field if needed
     console.error(`Entity extraction error for ${fileId}:`, errorMessage);
@@ -217,6 +224,24 @@ export async function updateEntityStatus(
 
   if (error) {
     console.error('Failed to update entity status:', error);
+  }
+}
+
+/**
+ * Update entity extraction progress (0-100)
+ */
+export async function updateEntityProgress(
+  supabase: SupabaseClient,
+  fileId: string,
+  progress: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('file_uploads')
+    .update({ entities_progress: Math.min(100, Math.max(0, Math.round(progress))) })
+    .eq('id', fileId);
+
+  if (error) {
+    console.error('Failed to update entity progress:', error);
   }
 }
 
