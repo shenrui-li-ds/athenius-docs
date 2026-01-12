@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { semanticSearch, hybridSearch } from '@/lib/retrieval/semantic-search';
+import { semanticSearch, hybridSearch, entityBoostedSearch } from '@/lib/retrieval/semantic-search';
 import { synthesize, synthesizeStream } from '@/lib/generation/synthesizer';
 import { NextResponse } from 'next/server';
 import type { QueryRequest, QueryMode, QueryStreamEvent } from '@/lib/types';
@@ -60,13 +60,13 @@ export async function POST(request: Request) {
 
     // Determine search method and parameters based on mode
     const topK = mode === 'detailed' || mode === 'deep' ? 25 : 10;
-    // Hybrid search disabled - OR keyword matching is too broad and hurts results
-    const useHybridSearch = false;
-    console.log(`Query: "${query.trim()}", fileIds: ${fileIds.join(', ')}, topK: ${topK}, hybrid: ${useHybridSearch}`);
+    // Phase 3: Use entity-boosted search (falls back to semantic if no entities)
+    const useEntitySearch = true;
+    console.log(`Query: "${query.trim()}", fileIds: ${fileIds.join(', ')}, topK: ${topK}, entitySearch: ${useEntitySearch}`);
 
-    // Perform search (hybrid for detailed/deep, semantic for simple)
-    const chunks = useHybridSearch
-      ? await hybridSearch(query.trim(), fileIds, topK)
+    // Perform search (entity-boosted for all modes, falls back gracefully)
+    const chunks = useEntitySearch
+      ? await entityBoostedSearch(query.trim(), fileIds, topK)
       : await semanticSearch(query.trim(), fileIds, topK);
     console.log(`Search returned ${chunks.length} chunks`);
 

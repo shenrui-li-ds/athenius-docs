@@ -22,10 +22,10 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
 
-    // Build query
+    // Build query - include entity fields for Phase 3
     let query = supabase
       .from('file_uploads')
-      .select('id, filename, original_filename, file_type, file_size, status, chunk_count, created_at, expires_at')
+      .select('id, filename, original_filename, file_type, file_size, status, chunk_count, created_at, expires_at, entities_enabled, entities_status')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);

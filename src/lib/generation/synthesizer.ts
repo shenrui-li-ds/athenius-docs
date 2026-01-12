@@ -1,4 +1,5 @@
-import OpenAI from 'openai';
+import { callGemini, callGeminiStream } from '@/lib/gemini';
+import type { ChatMessage } from '@/lib/gemini';
 import type { RetrievedChunk, Source, QueryMode, QueryStreamEvent } from '@/lib/types';
 import {
   GROUNDED_SYSTEM_PROMPT,
@@ -8,14 +9,10 @@ import {
 } from './prompts';
 import { assembleContext } from '@/lib/retrieval/semantic-search';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const MODEL = 'gpt-5-mini-2025-08-07';
+const MODEL = 'gemini-3-flash-preview';
 
 /**
- * Synthesize a response from retrieved chunks
+ * Synthesize a response from retrieved chunks using Gemini
  */
 export async function synthesize(
   query: string,
@@ -36,26 +33,28 @@ export async function synthesize(
   // Select system prompt based on mode
   const systemPrompt = getSystemPrompt(mode);
 
-  // Generate response (no temperature for thinking models, use max_completion_tokens)
-  // Thinking models need more tokens as they use tokens for reasoning + output
-  const completionTokens = mode === 'detailed' ? 8000 : 4000;
-  console.log(`Synthesizer: calling ${MODEL} with mode=${mode}, maxCompletionTokens=${completionTokens}`);
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: generateUserPrompt(query, context) },
-    ],
-    max_completion_tokens: completionTokens,
+  // Build messages for Gemini
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: generateUserPrompt(query, context) },
+  ];
+
+  // Generate response with Gemini
+  const completionTokens = mode === 'detailed' ? 8192 : 4096;
+  console.log(`Synthesizer: calling ${MODEL} with mode=${mode}, maxOutputTokens=${completionTokens}`);
+
+  const response = await callGemini(messages, MODEL, {
+    temperature: 0.3, // Lower temperature for more focused responses
+    maxOutputTokens: completionTokens,
   });
 
   console.log('Synthesizer response:', JSON.stringify({
-    finishReason: response.choices[0]?.finish_reason,
-    hasContent: !!response.choices[0]?.message?.content,
-    contentLength: response.choices[0]?.message?.content?.length,
+    hasContent: !!response.content,
+    contentLength: response.content?.length,
+    usage: response.usage,
   }));
 
-  const content = response.choices[0]?.message?.content || 'Unable to generate response.';
+  const content = response.content || 'Unable to generate response.';
 
   // Convert used chunks to sources
   const sources = chunksToSources(usedChunks);
@@ -115,7 +114,7 @@ function chunksToSources(chunks: RetrievedChunk[]): Source[] {
 
 /**
  * Streaming synthesizer for real-time token delivery
- * Phase 2: Server-Sent Events streaming support
+ * Uses Gemini SSE streaming
  */
 export async function* synthesizeStream(
   query: string,
@@ -146,41 +145,53 @@ export async function* synthesizeStream(
   // Select system prompt based on mode
   const systemPrompt = getSystemPrompt(mode);
 
+  // Build messages for Gemini
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: generateUserPrompt(query, context) },
+  ];
+
   try {
-    // Stream LLM response
-    // Thinking models need more tokens as they use tokens for reasoning + output
-    const maxTokens = mode === 'detailed' ? 8000 : 4000;
-    const stream = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: generateUserPrompt(query, context) },
-      ],
-      max_completion_tokens: maxTokens,
-      stream: true,
+    // Get streaming response from Gemini
+    const completionTokens = mode === 'detailed' ? 8192 : 4096;
+    const response = await callGeminiStream(messages, MODEL, {
+      temperature: 0.3,
+      maxOutputTokens: completionTokens,
     });
 
-    let totalTokens = 0;
+    if (!response.body) {
+      throw new Error('No response body from Gemini streaming');
+    }
 
-    for await (const chunk of stream) {
-      const token = chunk.choices[0]?.delta?.content || '';
-      if (token) {
-        yield { type: 'token', content: token };
-      }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
 
-      // Track usage if available
-      if (chunk.usage) {
-        totalTokens = chunk.usage.completion_tokens || 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (text) {
+              yield { type: 'token', content: text };
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
       }
     }
 
-    // Signal completion with usage info
-    yield {
-      type: 'done',
-      usage: {
-        completionTokens: totalTokens,
-      },
-    };
+    // Signal completion
+    yield { type: 'done' };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error during synthesis';
     yield { type: 'error', message };

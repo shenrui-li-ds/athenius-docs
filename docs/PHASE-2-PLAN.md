@@ -4,7 +4,7 @@
 
 Enhance the RAG pipeline with semantic chunking, hybrid search, streaming responses, and improved source tracking for better retrieval accuracy and user experience.
 
-## Status: COMPLETED
+## Status: COMPLETED (with caveats)
 
 ## Features Implemented
 
@@ -31,23 +31,29 @@ Enhanced chunking that respects document structure:
 
 PostgreSQL full-text search support:
 - GIN index on chunk content for fast text search
-- `keyword_search_chunks()` RPC function for keyword search
+- `keyword_search_chunks()` RPC function for keyword search (OR logic)
 - `hybrid_search_chunks()` RPC function with built-in RRF
 
-### 3. Hybrid Search (Semantic + Keyword)
+### 3. Hybrid Search (Semantic + Keyword) - DISABLED
 
 **File**: `src/lib/retrieval/semantic-search.ts`
 
-Combined search using Reciprocal Rank Fusion (RRF):
-- `keywordSearch()` - PostgreSQL full-text search
-- `hybridSearch()` - Combines semantic + keyword with RRF
-- Default weights: 60% semantic, 40% keyword
-- RRF constant k=60
+**Status**: Implemented but **disabled** due to quality issues.
 
-**RRF Formula**:
-```
-score(d) = Σ weight_i * (1 / (k + rank_i))
-```
+Combined search using Reciprocal Rank Fusion (RRF):
+- `keywordSearch()` - PostgreSQL full-text search with OR logic
+- `hybridSearch()` - Combines semantic + keyword with RRF
+- Configurable weights (tested 60/40 and 80/20)
+
+**Issues discovered**:
+- OR-based keyword search is too broad for complex questions
+- Boosts irrelevant chunks containing common words ("car", "think", "drive")
+- Pure semantic search produces better results for nuanced queries
+- Multi-hop reasoning questions (requiring info from multiple chunks) still fail
+
+**Current state**: `useHybridSearch = false` in route.ts
+
+**Conclusion**: Simple keyword hybrid doesn't solve multi-hop reasoning. Need entity-based retrieval (see Phase 3 HybridRAG).
 
 ### 4. Enhanced Source Tracking
 
@@ -62,33 +68,27 @@ Extended `RetrievedChunk` interface:
 Rich citations in `assembleContext()`:
 - Format: `[Source: filename, Page X, Section: "Title", Chunk N]`
 
-### 5. Streaming Responses (SSE)
+### 5. Streaming Responses (SSE) - DISABLED
 
 **File**: `src/lib/generation/synthesizer.ts`
 
+**Status**: Implemented but **disabled** for debugging.
+
 Server-Sent Events streaming:
 - `synthesizeStream()` async generator
-- Uses `gpt-5-mini-2025-08-07` for streaming (thinking models don't support streaming)
+- Uses `gpt-5-mini-2025-08-07` (thinking model)
 - Events: `sources`, `token`, `done`, `error`
 
-**Event types**:
-```typescript
-type QueryStreamEvent =
-  | { type: 'sources'; sources: Source[] }
-  | { type: 'token'; content: string }
-  | { type: 'done'; usage?: { completionTokens?: number } }
-  | { type: 'error'; message: string };
-```
+**Current state**: `acceptsStream = false` in route.ts (using non-streaming JSON responses)
 
 ### 6. Streaming API Route
 
 **File**: `src/app/api/files/query/route.ts`
 
-SSE endpoint:
+SSE endpoint (disabled):
 - Detects `Accept: text/event-stream` header
 - Returns streaming response for SSE requests
 - Falls back to JSON for non-streaming requests
-- Uses hybrid search for detailed/deep modes
 
 ### 7. Client-Side Streaming Handler
 
@@ -120,59 +120,30 @@ Better citation guidance:
 - Conflict handling guidance
 - TXT/MD file citation format
 
-## Database Migration
-
-Run in Supabase SQL Editor:
-
-```sql
--- Full-text search index
-CREATE INDEX IF NOT EXISTS idx_file_chunks_content_fts
-ON file_chunks USING GIN (to_tsvector('english', content));
-
--- Keyword search RPC
-CREATE OR REPLACE FUNCTION keyword_search_chunks(
-  search_query text,
-  file_ids uuid[],
-  match_count int DEFAULT 10
-) RETURNS TABLE (...) LANGUAGE plpgsql;
-
--- Hybrid search RPC (optional)
-CREATE OR REPLACE FUNCTION hybrid_search_chunks(
-  query_embedding vector(1536),
-  search_query text,
-  file_ids uuid[],
-  ...
-) RETURNS TABLE (...) LANGUAGE plpgsql;
-```
-
-## Configuration
-
-### Hybrid Search Config
-
-```typescript
-const DEFAULT_HYBRID_CONFIG = {
-  semanticWeight: 0.6,  // 60% semantic
-  keywordWeight: 0.4,   // 40% keyword
-  rrf_k: 60,            // RRF constant
-};
-```
+## Current Configuration
 
 ### Search Mode Behavior
 
-| Mode | Search Method | Top-K | Streaming Model |
-|------|--------------|-------|-----------------|
+| Mode | Search Method | Top-K | Model |
+|------|--------------|-------|-------|
 | Simple | Semantic only | 10 | gpt-5-mini-2025-08-07 |
-| Detailed | Hybrid | 15 | gpt-5-mini-2025-08-07 |
-| Deep | Hybrid | 15 | gpt-5-mini-2025-08-07 |
+| Detailed | Semantic only | 25 | gpt-5-mini-2025-08-07 |
 
-## Verification Checklist
+### Token Limits (for thinking model)
 
-- [ ] Run database migration `002_add_fts_index.sql`
-- [ ] Upload a markdown file with headers
-- [ ] Verify `section_title` is populated in database
-- [ ] Test hybrid search with specific keywords
-- [ ] Verify streaming with network tab showing `text/event-stream`
-- [ ] Check citations include section titles when available
+| Mode | max_completion_tokens |
+|------|----------------------|
+| Simple | 4000 |
+| Detailed | 8000 |
+
+Note: Thinking models use tokens for reasoning + output, so limits are higher than typical.
+
+## Lessons Learned
+
+1. **Keyword search with OR is too broad** - Matches any chunk with common words, hurting precision
+2. **RRF can hurt results** - Boosts chunks found in both searches, but those aren't always the best
+3. **Multi-hop reasoning requires entity relationships** - Vector similarity alone can't connect "Myrtle saw yellow car" → "Tom drove yellow car" → "Myrtle thought Tom was driving"
+4. **Thinking models need more tokens** - `max_completion_tokens` includes reasoning, not just output
 
 ## Files Modified
 
@@ -180,10 +151,14 @@ const DEFAULT_HYBRID_CONFIG = {
 |------|---------|
 | `src/lib/chunking/chunker.ts` | Section detection, semantic chunking |
 | `src/lib/retrieval/semantic-search.ts` | Keyword search, hybrid search, RRF |
-| `src/lib/generation/synthesizer.ts` | `synthesizeStream()` function |
+| `src/lib/generation/synthesizer.ts` | `synthesizeStream()`, increased token limits |
 | `src/lib/generation/prompts.ts` | Enhanced citation format |
-| `src/lib/types.ts` | Streaming types, extended RetrievedChunk |
-| `src/app/api/files/query/route.ts` | SSE streaming support |
+| `src/lib/types.ts` | Streaming types, extended RetrievedChunk, HybridSearchConfig |
+| `src/app/api/files/query/route.ts` | SSE streaming support (disabled), hybrid toggle |
 | `src/components/DocsApp.tsx` | Streaming fetch handler |
 | `src/components/ResultDisplay.tsx` | Streaming UI with cursor |
-| `supabase/migrations/002_add_fts_index.sql` | Full-text search index |
+| `supabase/migrations/002_add_fts_index.sql` | Full-text search index, OR-based keyword search |
+
+## Next Steps (Phase 3)
+
+The key insight from Phase 2: **simple hybrid search doesn't solve multi-hop reasoning**. Phase 3 will implement **Progressive HybridRAG** with entity extraction to handle complex questions over narratives and long documents.

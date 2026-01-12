@@ -1,9 +1,11 @@
 import { createAdminClient } from '@/lib/supabase/server';
-import { embedText } from '@/lib/embeddings/openai';
+import { embedText } from '@/lib/embeddings/gemini';
 import type { RetrievedChunk, HybridSearchConfig, RetrievalMethod } from '@/lib/types';
 import { DEFAULT_HYBRID_CONFIG } from '@/lib/types';
+import { expandQueryWithEntities, anyFileHasEntities } from '@/lib/entities';
 
 const DEFAULT_TOP_K = 10;
+const ENTITY_BOOST_FACTOR = 0.15; // Boost for chunks found via entity search
 
 /**
  * Perform semantic search across file chunks
@@ -403,6 +405,128 @@ export async function hybridSearch(
       method: r.retrievalMethod,
       combined: r.combinedScore?.toFixed(4),
       similarity: r.similarity.toFixed(4),
+    }))
+  );
+
+  return results;
+}
+
+/**
+ * Perform entity-boosted search (Progressive HybridRAG)
+ * Phase 3: Combines semantic search with entity-based retrieval
+ *
+ * This search:
+ * 1. Extracts entities from the query
+ * 2. Finds related entities via relationship traversal
+ * 3. Gets chunks mentioning those entities
+ * 4. Boosts semantic search results that also match entities
+ */
+export async function entityBoostedSearch(
+  query: string,
+  fileIds: string[],
+  topK: number = DEFAULT_TOP_K
+): Promise<RetrievedChunk[]> {
+  if (fileIds.length === 0) {
+    return [];
+  }
+
+  // Check if any files have entity extraction enabled
+  const hasEntities = await anyFileHasEntities(fileIds);
+
+  if (!hasEntities) {
+    // Fall back to pure semantic search
+    console.log('Entity-boosted search: No files with entities, using semantic search');
+    return semanticSearch(query, fileIds, topK);
+  }
+
+  // Run semantic search and entity expansion in parallel
+  const [semanticResults, entityExpansion] = await Promise.all([
+    semanticSearch(query, fileIds, topK * 2), // Get more candidates for boosting
+    expandQueryWithEntities(query, fileIds),
+  ]);
+
+  console.log(`Entity-boosted search: ${semanticResults.length} semantic results, ` +
+    `${entityExpansion.queryEntities.length} query entities, ` +
+    `${entityExpansion.relatedEntities.length} related entities, ` +
+    `${entityExpansion.entityChunkIds.length} entity chunks`);
+
+  // If no entities found in query, return semantic results
+  if (entityExpansion.queryEntities.length === 0) {
+    console.log('Entity-boosted search: No query entities, using semantic results');
+    return semanticResults.slice(0, topK);
+  }
+
+  // Create set of entity-derived chunk IDs for fast lookup
+  const entityChunkIdSet = new Set(entityExpansion.entityChunkIds);
+
+  // Boost semantic results that also appear in entity chunks
+  const boostedResults = semanticResults.map(chunk => {
+    const isEntityMatch = entityChunkIdSet.has(chunk.id);
+
+    if (isEntityMatch) {
+      return {
+        ...chunk,
+        similarity: Math.min(1, chunk.similarity + ENTITY_BOOST_FACTOR),
+        retrievalMethod: 'hybrid' as RetrievalMethod,
+        entityBoosted: true,
+      };
+    }
+
+    return chunk;
+  });
+
+  // Get entity-only chunks that weren't in semantic results
+  const semanticChunkIds = new Set(semanticResults.map(c => c.id));
+  const entityOnlyChunkIds = entityExpansion.entityChunkIds.filter(
+    id => !semanticChunkIds.has(id)
+  );
+
+  // If there are entity-only chunks, fetch them and add to results
+  if (entityOnlyChunkIds.length > 0) {
+    const supabase = createAdminClient();
+
+    const { data: entityChunks, error } = await supabase
+      .from('file_chunks')
+      .select(`
+        id,
+        content,
+        page_number,
+        section_title,
+        file_id,
+        file_uploads!inner(filename)
+      `)
+      .in('id', entityOnlyChunkIds.slice(0, topK)); // Limit for performance
+
+    if (!error && entityChunks) {
+      for (const chunk of entityChunks) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fileUpload = chunk.file_uploads as any;
+        const filename = fileUpload?.filename || 'Unknown';
+
+        boostedResults.push({
+          id: chunk.id,
+          content: chunk.content,
+          filename,
+          fileId: chunk.file_id,
+          page: chunk.page_number || undefined,
+          section: chunk.section_title || undefined,
+          similarity: 0.5, // Base score for entity-only results
+          retrievalMethod: 'hybrid' as RetrievalMethod,
+        });
+      }
+    }
+  }
+
+  // Re-sort by (boosted) similarity and return top K
+  const results = boostedResults
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, topK);
+
+  console.log('Entity-boosted search: final results:',
+    results.slice(0, 3).map(r => ({
+      method: r.retrievalMethod,
+      similarity: r.similarity.toFixed(4),
+      entityBoosted: (r as { entityBoosted?: boolean }).entityBoosted || false,
     }))
   );
 

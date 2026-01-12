@@ -128,6 +128,37 @@ export function DocsApp({ user }: DocsAppProps) {
     }
   };
 
+  const handleToggleEntities = async (fileId: string, enabled: boolean) => {
+    try {
+      if (enabled) {
+        // Enable entity extraction
+        const response = await fetch(`/api/files/${fileId}/entities`, {
+          method: 'POST',
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to enable entity extraction');
+        }
+      } else {
+        // Disable entity extraction
+        const response = await fetch(`/api/files/${fileId}/entities`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to disable entity extraction');
+        }
+      }
+
+      // Refresh file list to get updated entity status
+      await fetchFiles();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Entity operation failed');
+    }
+  };
+
   const handleQuery = async (query: string, mode: QueryMode) => {
     if (selectedFileIds.length === 0) {
       alert('Please select at least one file to query');
@@ -273,6 +304,7 @@ export function DocsApp({ user }: DocsAppProps) {
                   selectedIds={selectedFileIds}
                   onSelect={handleSelectFile}
                   onDelete={handleDeleteFile}
+                  onToggleEntities={handleToggleEntities}
                 />
               )}
             </div>

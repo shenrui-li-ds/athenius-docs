@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { FileUpload } from '@/lib/types';
 
 interface FileListProps {
@@ -7,9 +8,10 @@ interface FileListProps {
   selectedIds: string[];
   onSelect: (fileId: string) => void;
   onDelete: (fileId: string) => void;
+  onToggleEntities?: (fileId: string, enabled: boolean) => Promise<void>;
 }
 
-export function FileList({ files, selectedIds, onSelect, onDelete }: FileListProps) {
+export function FileList({ files, selectedIds, onSelect, onDelete, onToggleEntities }: FileListProps) {
   if (files.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -27,6 +29,7 @@ export function FileList({ files, selectedIds, onSelect, onDelete }: FileListPro
           isSelected={selectedIds.includes(file.id)}
           onSelect={() => onSelect(file.id)}
           onDelete={() => onDelete(file.id)}
+          onToggleEntities={onToggleEntities}
         />
       ))}
     </div>
@@ -38,12 +41,31 @@ interface FileItemProps {
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onToggleEntities?: (fileId: string, enabled: boolean) => Promise<void>;
 }
 
-function FileItem({ file, isSelected, onSelect, onDelete }: FileItemProps) {
+function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: FileItemProps) {
+  const [isTogglingEntities, setIsTogglingEntities] = useState(false);
+
   const isReady = file.status === 'ready';
   const isError = file.status === 'error';
   const isProcessing = file.status === 'processing' || file.status === 'pending';
+
+  const entitiesEnabled = file.entities_enabled || false;
+  const entitiesStatus = file.entities_status;
+  const isEntitiesProcessing = entitiesStatus === 'pending' || entitiesStatus === 'processing';
+
+  const handleToggleEntities = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onToggleEntities || isTogglingEntities || isEntitiesProcessing) return;
+
+    setIsTogglingEntities(true);
+    try {
+      await onToggleEntities(file.id, !entitiesEnabled);
+    } finally {
+      setIsTogglingEntities(false);
+    }
+  };
 
   return (
     <div
@@ -75,8 +97,39 @@ function FileItem({ file, isSelected, onSelect, onDelete }: FileItemProps) {
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {formatFileSize(file.file_size)}
           {isReady && ` • ${file.chunk_count} chunks`}
+          {entitiesEnabled && entitiesStatus === 'ready' && ' • Entities'}
         </p>
       </div>
+
+      {/* Entity toggle button - only show for ready files */}
+      {isReady && onToggleEntities && (
+        <button
+          onClick={handleToggleEntities}
+          disabled={isTogglingEntities || isEntitiesProcessing}
+          className={`
+            flex-shrink-0 p-1.5 rounded transition-colors
+            ${entitiesEnabled && entitiesStatus === 'ready'
+              ? 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30'
+              : 'text-gray-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20'}
+            ${(isTogglingEntities || isEntitiesProcessing) ? 'opacity-50 cursor-wait' : ''}
+          `}
+          title={
+            isEntitiesProcessing
+              ? 'Extracting entities...'
+              : entitiesEnabled
+              ? 'Deep Analysis enabled (click to disable)'
+              : 'Enable Deep Analysis for better multi-hop reasoning'
+          }
+        >
+          {isTogglingEntities || isEntitiesProcessing ? (
+            <span className="block h-4 w-4 animate-spin border-2 border-current border-t-transparent rounded-full" />
+          ) : (
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          )}
+        </button>
+      )}
 
       {/* Status */}
       <div className="flex-shrink-0">

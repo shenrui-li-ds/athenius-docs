@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { downloadFile } from '@/lib/supabase/storage';
 import { extractContent } from '@/lib/extraction';
 import { chunkDocument } from '@/lib/chunking/chunker';
-import { embedTexts } from '@/lib/embeddings/openai';
+import { embedTexts } from '@/lib/embeddings/gemini';
 import type { FileUpload, FileChunk, Chunk } from '@/lib/types';
 
 /**

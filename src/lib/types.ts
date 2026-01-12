@@ -21,6 +21,9 @@ export interface FileUpload {
   chunk_count: number;
   created_at: string;
   expires_at: string;
+  // Phase 3: Entity extraction fields
+  entities_enabled?: boolean;
+  entities_status?: 'pending' | 'processing' | 'ready' | 'error' | null;
 }
 
 // File chunk record (matches database schema)
@@ -143,7 +146,9 @@ export const DEFAULT_CHUNKING_CONFIG: ChunkingConfig = {
 };
 
 // Embedding dimensions
-export const EMBEDDING_DIMENSIONS = 1536; // OpenAI text-embedding-3-small
+// Note: Gemini uses 768 by default, OpenAI uses 1536
+// Using 768 for Gemini gemini-embedding-001
+export const EMBEDDING_DIMENSIONS = 768;
 
 // File constraints
 export const FILE_CONSTRAINTS = {
@@ -182,3 +187,102 @@ export const DEFAULT_HYBRID_CONFIG: HybridSearchConfig = {
   keywordWeight: 0.2,
   rrf_k: 60,
 };
+
+// ============================================
+// Phase 3: Entity Types for Progressive HybridRAG
+// ============================================
+
+// Entity types
+export type EntityType = 'character' | 'location' | 'object' | 'event' | 'organization';
+
+// Entity extraction status
+export type EntityStatus = 'pending' | 'processing' | 'ready' | 'error' | null;
+
+// Document entity (matches database schema)
+export interface DocumentEntity {
+  id: string;
+  file_id: string;
+  user_id: string;
+  name: string;
+  entity_type: EntityType;
+  aliases: string[];
+  description?: string | null;
+  first_mention_chunk?: number | null;
+  mention_count: number;
+  created_at: string;
+}
+
+// Entity relationship (matches database schema)
+export interface EntityRelationship {
+  id: string;
+  file_id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  relationship_type: string;
+  evidence_chunk_ids: string[];
+  confidence: number;
+  created_at: string;
+}
+
+// Entity mention in a chunk (matches database schema)
+export interface EntityMention {
+  id: string;
+  entity_id: string;
+  chunk_id: string;
+  mention_text?: string | null;
+  context?: string | null;
+  created_at: string;
+}
+
+// Note: FileUpload now includes entities_enabled and entities_status directly
+// FileUploadWithEntities is kept for backwards compatibility but is equivalent to FileUpload
+export type FileUploadWithEntities = FileUpload;
+
+// Entity extraction result from LLM
+export interface ExtractedEntity {
+  name: string;
+  type: EntityType;
+  aliases?: string[];
+  description?: string;
+}
+
+// Relationship extraction result from LLM
+export interface ExtractedRelationship {
+  source: string;  // Entity name
+  target: string;  // Entity name
+  type: string;    // Relationship type (e.g., "drives", "loves", "works_at")
+}
+
+// Entity extraction response from LLM
+export interface EntityExtractionResult {
+  entities: ExtractedEntity[];
+  relationships: ExtractedRelationship[];
+}
+
+// Query expansion result with entities
+export interface EntityQueryExpansion {
+  queryEntities: DocumentEntity[];      // Entities mentioned in query
+  relatedEntities: DocumentEntity[];    // Related entities from graph traversal
+  entityChunkIds: string[];             // Chunk IDs mentioning these entities
+}
+
+// Related entity from RPC function
+export interface RelatedEntity {
+  id: string;
+  name: string;
+  entity_type: EntityType;
+  relationship_type: string;
+  direction: 'outgoing' | 'incoming';
+  confidence: number;
+}
+
+// Chunk with entity information
+export interface ChunkWithEntities {
+  chunk_id: string;
+  content: string;
+  page_number?: number;
+  section_title?: string;
+  file_id: string;
+  filename: string;
+  entity_names: string[];
+}
