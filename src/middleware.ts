@@ -1,6 +1,9 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+// Allowed tiers for accessing this app
+const ALLOWED_TIERS = ['pro', 'admin'];
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -44,6 +47,23 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
+  }
+
+  // Check user tier for protected paths (must be pro or admin)
+  if (isProtectedPath && user) {
+    const { data: userLimits } = await supabase
+      .from('user_limits')
+      .select('user_tier')
+      .eq('user_id', user.id)
+      .single();
+
+    const userTier = userLimits?.user_tier || 'free';
+
+    if (!ALLOWED_TIERS.includes(userTier)) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/upgrade';
+      return NextResponse.redirect(url);
+    }
   }
 
   // Redirect to home if user is logged in and tries to access login/signup

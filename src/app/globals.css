@@ -76,12 +76,22 @@ body {
   line-height: 1.7;
 }
 
+/* Headings */
 .markdown-content h1,
 .markdown-content h2,
-.markdown-content h3 {
+.markdown-content h3,
+.markdown-content h4 {
   font-weight: 600;
   margin-top: 1.5em;
   margin-bottom: 0.5em;
+  color: var(--foreground);
+}
+
+.markdown-content h1:first-child,
+.markdown-content h2:first-child,
+.markdown-content h3:first-child,
+.markdown-content h4:first-child {
+  margin-top: 0;
 }
 
 .markdown-content h1 {
@@ -96,48 +106,108 @@ body {
   font-size: 1.1rem;
 }
 
+.markdown-content h4 {
+  font-size: 1rem;
+}
+
+/* Paragraphs */
 .markdown-content p {
   margin-bottom: 1em;
 }
 
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Bold and italic - critical for key terms */
+.markdown-content strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+
+/* Lists */
 .markdown-content ul,
 .markdown-content ol {
   margin-bottom: 1em;
   padding-left: 1.5em;
 }
 
+.markdown-content ul {
+  list-style-type: disc;
+}
+
+.markdown-content ol {
+  list-style-type: decimal;
+}
+
 .markdown-content li {
   margin-bottom: 0.25em;
 }
 
+/* Nested lists */
+.markdown-content li > ul,
+.markdown-content li > ol {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.markdown-content li > ul {
+  list-style-type: circle;
+}
+
+/* Inline code */
 .markdown-content code {
   background: var(--card-background);
-  padding: 0.125em 0.25em;
+  padding: 0.125em 0.375em;
   border-radius: 0.25rem;
   font-size: 0.875em;
   font-family: var(--font-mono), monospace;
+  border: 1px solid var(--border-color);
 }
 
+/* Code blocks */
 .markdown-content pre {
   background: var(--card-background);
   padding: 1em;
   border-radius: 0.5rem;
   overflow-x: auto;
   margin-bottom: 1em;
+  border: 1px solid var(--border-color);
 }
 
 .markdown-content pre code {
   background: transparent;
   padding: 0;
+  border: none;
+  font-size: 0.875em;
 }
 
+/* Blockquotes - for direct quotations from documents */
 .markdown-content blockquote {
   border-left: 3px solid var(--border-color);
   padding-left: 1em;
   margin-left: 0;
+  margin-bottom: 1em;
   color: var(--text-secondary);
+  font-style: italic;
 }
 
+.markdown-content blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Horizontal rule - section separator */
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 1.5em 0;
+}
+
+/* Links */
 .markdown-content a {
   color: #3b82f6;
   text-decoration: underline;
@@ -145,4 +215,50 @@ body {
 
 .markdown-content a:hover {
   color: #60a5fa;
+}
+
+/* Tables - for comparison data */
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+  font-size: 0.875em;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border-color);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+
+.markdown-content th {
+  background: var(--card-background);
+  font-weight: 600;
+}
+
+.markdown-content tr:nth-child(even) {
+  background: var(--card-background);
+}
+
+/* KaTeX / LaTeX math styling */
+.markdown-content .katex {
+  font-size: 1.1em;
+}
+
+.markdown-content .katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Ensure KaTeX text color matches theme */
+.markdown-content .katex .mord,
+.markdown-content .katex .mbin,
+.markdown-content .katex .mrel,
+.markdown-content .katex .mopen,
+.markdown-content .katex .mclose,
+.markdown-content .katex .mpunct,
+.markdown-content .katex .minner {
+  color: var(--foreground);
 }

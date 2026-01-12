@@ -294,29 +294,16 @@ export function DocsApp({ user }: DocsAppProps) {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-medium">Your Files</h2>
                 {selectedFileIds.length > 0 && (
-                  <span className="text-sm text-blue-600 dark:text-blue-400">
+                  <span className="text-sm text-[var(--accent-color)]">
                     {selectedFileIds.length} selected
                   </span>
                 )}
               </div>
 
-              {/* Deep Analysis hint */}
-              <div className="mb-3 p-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-                <p className="text-xs text-purple-700 dark:text-purple-300">
-                  <span className="inline-flex items-center gap-1">
-                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <strong>Deep Analysis:</strong>
-                  </span>{' '}
-                  Click the lightning bolt on any file to enable entity extraction for better multi-hop reasoning (e.g., character relationships in novels).
-                </p>
-              </div>
-
               {isLoadingFiles ? (
                 <div className="animate-pulse space-y-2">
                   {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-16 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+                    <div key={i} className="h-16 bg-[var(--hover-background)] rounded-lg" />
                   ))}
                 </div>
               ) : (
@@ -346,7 +333,7 @@ export function DocsApp({ user }: DocsAppProps) {
                 </p>
               )}
               {files.length === 0 && (
-                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                <p className="mt-2 text-sm text-[var(--text-secondary)]">
                   Upload documents to start asking questions.
                 </p>
               )}

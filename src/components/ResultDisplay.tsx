@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import type { Source } from '@/lib/types';
 
 interface ResultDisplayProps {
@@ -24,12 +28,12 @@ export function ResultDisplay({ content, sources, isLoading, isStreaming, error 
   // Show loading skeleton only when loading and no content yet
   if (isLoading && !content && sources.length === 0) {
     return (
-      <div className="p-6 border border-gray-200 dark:border-gray-700 rounded-lg">
+      <div className="p-6 border border-[var(--border-color)] rounded-lg bg-[var(--card-background)]">
         <div className="animate-pulse space-y-3">
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full" />
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6" />
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-2/3" />
+          <div className="h-4 bg-[var(--hover-background)] rounded w-3/4" />
+          <div className="h-4 bg-[var(--hover-background)] rounded w-full" />
+          <div className="h-4 bg-[var(--hover-background)] rounded w-5/6" />
+          <div className="h-4 bg-[var(--hover-background)] rounded w-2/3" />
         </div>
       </div>
     );
@@ -37,7 +41,7 @@ export function ResultDisplay({ content, sources, isLoading, isStreaming, error 
 
   if (error) {
     return (
-      <div className="p-4 border border-red-200 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-900/20">
+      <div className="p-4 border border-red-300 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-900/20">
         <p className="text-red-600 dark:text-red-400">{error}</p>
       </div>
     );
@@ -49,24 +53,27 @@ export function ResultDisplay({ content, sources, isLoading, isStreaming, error 
   }
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+    <div className="border border-[var(--border-color)] rounded-lg overflow-hidden bg-[var(--card-background)]">
       {/* Response content */}
       <div className="p-6">
         {content ? (
-          <div className="prose dark:prose-invert max-w-none">
-            {content.split('\n').map((paragraph, index) => (
-              <p key={index} className="mb-2 last:mb-0">
-                {paragraph}
-                {/* Show blinking cursor at end during streaming */}
-                {isStreaming && index === content.split('\n').length - 1 && (
-                  <span className="inline-block w-2 h-4 ml-1 bg-blue-500 dark:bg-blue-400 animate-pulse" />
-                )}
-              </p>
-            ))}
+          <div className="relative">
+            <div className="markdown-content text-[var(--text-primary)]">
+              <ReactMarkdown
+                remarkPlugins={[remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+              >
+                {content}
+              </ReactMarkdown>
+            </div>
+            {/* Show blinking cursor at end during streaming */}
+            {isStreaming && (
+              <span className="inline-block w-2 h-4 ml-1 bg-[var(--accent-color)] animate-pulse align-middle" />
+            )}
           </div>
         ) : isStreaming ? (
-          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-            <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 animate-pulse" />
+          <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+            <span className="inline-block w-2 h-4 bg-[var(--accent-color)] animate-pulse" />
             <span className="text-sm">Generating response...</span>
           </div>
         ) : null}
@@ -74,15 +81,15 @@ export function ResultDisplay({ content, sources, isLoading, isStreaming, error 
 
       {/* Sources section */}
       {sources.length > 0 && (
-        <div className="border-t border-gray-200 dark:border-gray-700">
+        <div className="border-t border-[var(--border-color)]">
           <button
             onClick={() => setShowSources(!showSources)}
-            className="w-full px-6 py-3 flex items-center justify-between text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="w-full px-6 py-3 flex items-center justify-between text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--hover-background)] transition-colors"
           >
             <span className="flex items-center gap-2">
               Sources ({sources.length})
               {isStreaming && (
-                <span className="text-xs text-blue-500 dark:text-blue-400">
+                <span className="text-xs text-[var(--accent-color)]">
                   Retrieved
                 </span>
               )}
@@ -123,14 +130,14 @@ function SourceCard({ source, index }: { source: Source; index: number }) {
   const displayTitle = section ? source.title.replace(/ - .+$/, '') : source.title;
 
   return (
-    <div className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg text-sm">
+    <div className="p-3 border border-[var(--border-color)] rounded-lg text-sm bg-[var(--background)]">
       <div className="flex items-start gap-2">
-        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-medium">
+        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--accent-muted)] text-[var(--accent-color)] flex items-center justify-center text-xs font-medium">
           {index}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{displayTitle}</p>
-          <div className="flex flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <p className="font-medium truncate text-[var(--text-primary)]">{displayTitle}</p>
+          <div className="flex flex-wrap gap-2 text-xs text-[var(--text-tertiary)]">
             {page && <span>Page {page}</span>}
             {section && (
               <>
@@ -143,13 +150,13 @@ function SourceCard({ source, index }: { source: Source; index: number }) {
       </div>
 
       <div className="mt-2 ml-8">
-        <p className="text-gray-600 dark:text-gray-400">
+        <p className="text-[var(--text-secondary)]">
           {expanded ? source.content : source.snippet}
         </p>
         {source.content.length > (source.snippet?.length || 0) && (
           <button
             onClick={() => setExpanded(!expanded)}
-            className="mt-1 text-blue-600 dark:text-blue-400 text-xs hover:underline"
+            className="mt-1 text-[var(--accent-color)] text-xs hover:underline"
           >
             {expanded ? 'Show less' : 'Show more'}
           </button>

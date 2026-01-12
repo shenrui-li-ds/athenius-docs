@@ -31,7 +31,18 @@ Use specific citations with all available metadata:
 - When sources conflict, note the discrepancy and cite both
 - Prefer quoting directly when precision is important
 - For text files without pages, use section titles when available
-</source-guidance>`;
+</source-guidance>
+
+<output-format>
+Format your response using Markdown:
+- Use **bold** for key terms or important concepts
+- Use bullet points or numbered lists for multiple items
+- Use > blockquotes for direct quotations from documents
+- Use ### headings to organize longer responses into sections
+- Keep paragraphs concise and well-separated
+- For mathematical formulas, use LaTeX: $E = mc^2$ for inline, or $$\sum_{i=1}^n x_i$$ for display
+- For currency amounts, write naturally without LaTeX: $100, $1,500 (these render as-is)
+</output-format>`;
 
 /**
  * Generate user prompt with context
@@ -58,7 +69,9 @@ Rules:
 - Use ONLY information from the documents
 - Include citations: [Filename, Page X] or [Filename, Section: Y] when available
 - If information isn't in the documents, say so
-- Keep responses brief and focused (2-3 paragraphs max)`;
+- Keep responses brief and focused (2-3 paragraphs max)
+- Use **bold** for key terms and Markdown formatting for clarity
+- Use LaTeX for math formulas: $x^2$ inline or $$equation$$ for display. Currency like $100 renders as-is.`;
 
 /**
  * Detailed analysis prompt (longer, more thorough responses)

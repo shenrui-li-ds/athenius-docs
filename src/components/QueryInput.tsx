@@ -29,7 +29,7 @@ export function QueryInput({ onSubmit, disabled, isLoading }: QueryInputProps) {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Ask a question about your documents..."
           disabled={disabled || isLoading}
-          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="flex-1 px-4 py-2 border border-[var(--border-color)] rounded-lg bg-[var(--card-background)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-color)] disabled:opacity-50"
         />
         <button
           type="submit"
@@ -53,9 +53,9 @@ export function QueryInput({ onSubmit, disabled, isLoading }: QueryInputProps) {
       </div>
 
       <div className="flex gap-4 text-sm">
-        <span className="text-gray-500 dark:text-gray-400">Mode:</span>
+        <span className="text-[var(--text-secondary)]">Mode:</span>
         {(['simple', 'detailed'] as QueryMode[]).map((m) => (
-          <label key={m} className="flex items-center gap-1 cursor-pointer">
+          <label key={m} className="flex items-center gap-1 cursor-pointer text-[var(--text-primary)]">
             <input
               type="radio"
               name="mode"
@@ -63,7 +63,7 @@ export function QueryInput({ onSubmit, disabled, isLoading }: QueryInputProps) {
               checked={mode === m}
               onChange={() => setMode(m)}
               disabled={disabled || isLoading}
-              className="text-blue-600 focus:ring-blue-500"
+              className="text-[var(--accent-color)] focus:ring-[var(--accent-color)]"
             />
             <span className="capitalize">{m}</span>
           </label>

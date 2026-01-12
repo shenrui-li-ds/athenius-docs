@@ -75,8 +75,8 @@ export function FileUploader({ onUpload, disabled }: FileUploaderProps) {
       onDrop={handleDrop}
       className={`
         relative border-2 border-dashed rounded-lg p-8 text-center transition-colors
-        ${isDragging ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-700'}
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-400 dark:hover:border-gray-600'}
+        ${isDragging ? 'border-[var(--accent-color)] bg-[var(--accent-muted)]' : 'border-[var(--border-color)]'}
+        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-[var(--text-tertiary)]'}
       `}
     >
       <input
@@ -91,10 +91,10 @@ export function FileUploader({ onUpload, disabled }: FileUploaderProps) {
       <div className="space-y-2">
         <div className="flex justify-center">
           {isUploading ? (
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-[var(--accent-color)] border-t-transparent" />
           ) : (
             <svg
-              className="h-10 w-10 text-gray-400"
+              className="h-10 w-10 text-[var(--text-tertiary)]"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -109,10 +109,10 @@ export function FileUploader({ onUpload, disabled }: FileUploaderProps) {
           )}
         </div>
 
-        <p className="text-sm text-gray-600 dark:text-gray-400">
+        <p className="text-sm text-[var(--text-secondary)]">
           {isUploading ? 'Uploading...' : 'Drag and drop files here, or click to select'}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-500">
+        <p className="text-xs text-[var(--text-tertiary)]">
           Supported: {FILE_CONSTRAINTS.supportedTypes.join(', ').toUpperCase()} (max {FILE_CONSTRAINTS.maxSizeMB}MB)
         </p>
       </div>

@@ -28,7 +28,7 @@ import type {
 // Use Gemini for entity extraction
 const EXTRACTION_MODEL = 'gemini-3-flash-preview';
 const BATCH_SIZE = 3; // Number of chunks to process together (keep small to avoid token limits)
-const PARALLEL_BATCHES = 4; // More parallel batches to compensate for smaller batch size
+const PARALLEL_BATCHES = 8; // High parallelism for speed (Gemini handles concurrent requests well)
 const MAX_RETRIES = 2;
 const MAX_OUTPUT_TOKENS = 4096; // Enough for entity extraction from batch
 
