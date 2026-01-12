@@ -8,6 +8,7 @@ import { FileList } from './FileList';
 import { QueryInput } from './QueryInput';
 import { ResultDisplay } from './ResultDisplay';
 import { UserMenu } from './UserMenu';
+import { APP_ICON, APP_NAME } from '@/lib/branding';
 
 interface DocsAppProps {
   user: User;
@@ -20,6 +21,7 @@ export function DocsApp({ user }: DocsAppProps) {
   const [isQuerying, setIsQuerying] = useState(false);
   const [result, setResult] = useState<{ content: string; sources: Source[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dbWarning, setDbWarning] = useState<string | null>(null);
 
   // Fetch files on mount
   useEffect(() => {
@@ -44,9 +46,23 @@ export function DocsApp({ user }: DocsAppProps) {
   const fetchFiles = async () => {
     try {
       const response = await fetch('/api/files');
-      if (!response.ok) throw new Error('Failed to fetch files');
       const data = await response.json();
+
+      if (!response.ok) {
+        // Handle specific error cases
+        if (response.status === 401) {
+          console.warn('User not authenticated');
+          return;
+        }
+        throw new Error(data.error || 'Failed to fetch files');
+      }
+
       setFiles(data.files || []);
+
+      // Check for database warning
+      if (data.warning) {
+        setDbWarning(data.warning);
+      }
     } catch (err) {
       console.error('Error fetching files:', err);
     } finally {
@@ -149,17 +165,18 @@ export function DocsApp({ user }: DocsAppProps) {
   const readyFiles = files.filter((f) => f.status === 'ready');
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-[var(--background)]">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <header className="bg-[var(--card-background)] border-b border-[var(--border-color)]">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-semibold">Athenius Docs</h1>
+            <img
+              src={APP_ICON}
+              alt={APP_NAME}
+              className="app-icon w-8 h-8"
+              style={{ filter: 'brightness(0) saturate(100%) invert(91%) sepia(4%) saturate(398%) hue-rotate(182deg) brightness(95%) contrast(87%)' }}
+            />
+            <h1 className="app-title text-xl">{APP_NAME}</h1>
           </div>
           <UserMenu user={user} />
         </div>
@@ -167,6 +184,18 @@ export function DocsApp({ user }: DocsAppProps) {
 
       {/* Main content */}
       <main className="max-w-6xl mx-auto px-4 py-8">
+        {/* Database warning */}
+        {dbWarning && (
+          <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-amber-800 dark:text-amber-200 text-sm">
+              <strong>Setup Required:</strong> {dbWarning}
+            </p>
+            <p className="text-amber-700 dark:text-amber-300 text-xs mt-1">
+              Run the SQL migration in <code className="bg-amber-100 dark:bg-amber-800 px-1 rounded">supabase/migrations/001_add_docs_tables.sql</code>
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left column: File upload and list */}
           <div className="lg:col-span-1 space-y-6">

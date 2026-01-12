@@ -100,17 +100,31 @@ athenius-docs/
 └── public/                    # Static assets
 ```
 
+## Scripts
+
+```bash
+npm run dev          # Start development server
+npm run build        # Production build
+npm run start        # Start production server
+npm run lint         # Run ESLint
+npm run test         # Run tests in watch mode
+npm run test:run     # Run tests once
+npm run test:coverage # Run tests with coverage
+```
+
 ## Development Phases
 
 ### Phase 1: Core Infrastructure
 - [x] Project setup with Next.js 15
-- [ ] Supabase integration (shared config)
-- [ ] File upload to Supabase Storage
-- [ ] PDF and TXT extraction
-- [ ] Basic fixed-size chunking
-- [ ] OpenAI embedding generation
-- [ ] pgvector storage and basic search
-- [ ] Simple query endpoint
+- [x] Supabase integration (auth, storage)
+- [x] File upload to Supabase Storage
+- [x] PDF and TXT extraction
+- [x] Basic chunking with overlap
+- [x] OpenAI embedding generation
+- [x] pgvector storage and semantic search
+- [x] Query endpoint with RAG
+- [x] Basic UI (upload, query, results)
+- [x] Unit tests (52 tests passing)
 
 ### Phase 2: RAG Pipeline
 - [ ] Semantic chunking with overlap

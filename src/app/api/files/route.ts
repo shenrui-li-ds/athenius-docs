@@ -38,6 +38,15 @@ export async function GET(request: Request) {
     const { data: files, error: filesError } = await query;
 
     if (filesError) {
+      // Check if table doesn't exist (migration not run)
+      if (filesError.message.includes('relation') && filesError.message.includes('does not exist')) {
+        console.warn('file_uploads table does not exist. Run the database migration.');
+        return NextResponse.json({
+          files: [],
+          pagination: { limit, offset, total: 0 },
+          warning: 'Database not initialized. Please run the migration.',
+        });
+      }
       throw new Error(`Failed to list files: ${filesError.message}`);
     }
 
