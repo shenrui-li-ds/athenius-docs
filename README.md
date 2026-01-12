@@ -70,10 +70,27 @@ ANTHROPIC_API_KEY=your_anthropic_key
 GEMINI_API_KEY=your_gemini_key
 GROK_API_KEY=your_grok_key
 
-# Inter-service Communication
-INTERNAL_SERVICE_TOKEN=your_secure_token
+# External API (for Athenius Search integration)
+ATHENIUS_API_KEY=your_secure_api_key
 DOCS_API_URL=https://docs.athenius.ai
 ```
+
+### Generating an API Key
+
+Generate a secure 256-bit API key using any of these methods:
+
+```bash
+# Option 1: OpenSSL (recommended)
+openssl rand -hex 32
+
+# Option 2: Python
+python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# Option 3: Node.js
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Set the same key in both Athenius Docs and Athenius Search environments.
 
 ## Project Structure
 
@@ -127,19 +144,19 @@ npm run test:coverage # Run tests with coverage
 - [x] Unit tests (52 tests passing)
 
 ### Phase 2: RAG Pipeline
-- [ ] Semantic chunking with overlap
-- [ ] Hybrid search (semantic + keyword)
-- [ ] Context assembly with source tracking
-- [ ] Streaming synthesis with citations
-- [ ] Grounded prompt engineering
-- [ ] Basic UI (upload + query + results)
+- [x] Semantic chunking with overlap
+- [x] Hybrid search (semantic + keyword)
+- [x] Context assembly with source tracking
+- [x] Streaming synthesis with citations
+- [x] Grounded prompt engineering
+- [x] Basic UI (upload + query + results)
 
 ### Phase 3: Integration
-- [ ] Internal APIs for Athenius Search
-- [ ] Service-to-service authentication
-- [ ] Credit system integration
-- [ ] Multi-file session support
-- [ ] File library UI
+- [x] External APIs for Athenius Search (`/api/v1/*`)
+- [x] Service-to-service authentication (API key + User ID)
+- [x] Entity extraction for deep analysis
+- [x] Multi-file session support
+- [x] File library UI
 
 ### Phase 4: Polish
 - [ ] DOCX support
@@ -151,7 +168,7 @@ npm run test:coverage # Run tests with coverage
 
 ## API Reference
 
-### Public APIs
+### Internal APIs (Web UI)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -161,12 +178,24 @@ npm run test:coverage # Run tests with coverage
 | `/api/files` | GET | List user's files |
 | `/api/files/[id]` | DELETE | Delete a file |
 
-### Internal APIs (for Athenius Search)
+### External API (for Athenius Search)
+
+Secure API for service-to-service communication. See [API.md](API.md) for full documentation.
+
+**Authentication:** All requests require:
+- `Authorization: Bearer <ATHENIUS_API_KEY>`
+- `X-User-ID: <user-uuid>`
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/internal/retrieve` | POST | Get relevant chunks |
-| `/api/internal/sources` | POST | Get sources in Tavily format |
+| `/api/v1/files` | GET | List user's files |
+| `/api/v1/files` | POST | Upload a file |
+| `/api/v1/files/[id]` | GET | Get file details |
+| `/api/v1/files/[id]` | DELETE | Delete a file |
+| `/api/v1/files/query` | POST | Query documents (streaming supported) |
+| `/api/v1/files/[id]/entities` | GET | Get entity extraction status |
+| `/api/v1/files/[id]/entities` | POST | Enable entity extraction |
+| `/api/v1/files/[id]/entities` | DELETE | Disable entity extraction |
 
 ## Architecture
 

@@ -142,7 +142,7 @@ You are a document analysis assistant. You ONLY answer questions based on the pr
 
 ## API Routes
 
-### Public APIs
+### Internal APIs (Web UI)
 
 | Route | Method | Purpose |
 |-------|--------|---------|
@@ -152,21 +152,33 @@ You are a document analysis assistant. You ONLY answer questions based on the pr
 | `/api/files` | GET | List user's files |
 | `/api/files/[id]` | DELETE | Delete file and chunks |
 
-### Internal APIs (for Athenius Search integration)
+### External APIs (for Athenius Search integration)
+
+Secure API under `/api/v1/*` for service-to-service communication.
+
+**Authentication**: All requests require:
+- `Authorization: Bearer <ATHENIUS_API_KEY>` header
+- `X-User-ID: <user-uuid>` header
 
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/api/internal/retrieve` | POST | Get relevant chunks for hybrid mode |
-| `/api/internal/sources` | POST | Get sources in Tavily-compatible format |
+| `/api/v1/files` | GET | List user's files with pagination |
+| `/api/v1/files` | POST | Upload file (multipart/form-data) |
+| `/api/v1/files/[id]` | GET | Get file details |
+| `/api/v1/files/[id]` | DELETE | Delete file and all data |
+| `/api/v1/files/query` | POST | Query documents (streaming supported) |
+| `/api/v1/files/[id]/entities` | GET | Get entity extraction status/stats |
+| `/api/v1/files/[id]/entities` | POST | Enable entity extraction |
+| `/api/v1/files/[id]/entities` | DELETE | Disable entity extraction |
 
-**Authentication**: Internal APIs use `INTERNAL_SERVICE_TOKEN` header validation.
+See [API.md](API.md) for full documentation with examples.
 
 ## Integration with Athenius Search
 
 ### Hybrid Mode Flow
 1. Athenius Search receives query with attached files
-2. Calls `/api/internal/sources` with file IDs and query
-3. Receives file sources in Tavily format
+2. Calls `/api/v1/files/query` with file IDs and query
+3. Receives response with sources in Tavily-compatible format
 4. Merges file sources with web sources
 5. Synthesizes combined response
 
@@ -196,9 +208,22 @@ File queries cost fewer credits than web searches:
 
 1. **RLS Policies**: All tables must have Row Level Security
 2. **File Paths**: Use `documents/{user_id}/{file_id}/{filename}` structure
-3. **Internal APIs**: Validate `INTERNAL_SERVICE_TOKEN` header
-4. **File Limits**: 50MB per file, 200MB total per user
+3. **External API Auth**: Validate `ATHENIUS_API_KEY` + `X-User-ID` headers
+4. **File Limits**: 10MB per file
 5. **Expiration**: Files auto-expire after 24 hours (configurable)
+
+### Generating an API Key
+
+```bash
+# OpenSSL (recommended)
+openssl rand -hex 32
+
+# Python
+python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# Node.js
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
 ## Development Guidelines
 
@@ -263,8 +288,8 @@ return NextResponse.json(
 
 ## Current Development Phase
 
-**Phase 1: Core Infrastructure** (Current)
-- Focus on: file upload, extraction, chunking, embedding, basic search
-- Priority: Get end-to-end flow working before optimization
+**Phase 4: Polish** (Current)
+- Phases 1-3 complete: Core infrastructure, RAG pipeline, and integration done
+- Focus on: DOCX support, re-ranking, cleanup jobs, i18n
 
 See README.md for full phase breakdown and progress tracking.

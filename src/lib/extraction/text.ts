@@ -4,13 +4,11 @@ export async function extractText(buffer: Buffer): Promise<ExtractedContent> {
   try {
     const text = buffer.toString('utf-8');
 
+    // Text files don't have page numbers - return only the text
+    // This will trigger the chunker's "no page information" branch
     return {
       text,
-      // Text files don't have pages
-      pages: [{
-        pageNumber: 1,
-        content: text,
-      }],
+      // No pages array - text files are chunked without page numbers
     };
   } catch (error) {
     throw new Error(

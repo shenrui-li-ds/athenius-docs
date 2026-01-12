@@ -33,8 +33,8 @@ describe('DEFAULT_CHUNKING_CONFIG', () => {
 });
 
 describe('EMBEDDING_DIMENSIONS', () => {
-  it('should be 1536 for text-embedding-3-small', () => {
-    expect(EMBEDDING_DIMENSIONS).toBe(1536);
+  it('should be 768 for text-embedding-3-small', () => {
+    expect(EMBEDDING_DIMENSIONS).toBe(768);
   });
 });
 

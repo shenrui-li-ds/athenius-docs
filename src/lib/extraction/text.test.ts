@@ -9,9 +9,8 @@ describe('extractText', () => {
     const result = await extractText(buffer);
 
     expect(result.text).toBe(text);
-    expect(result.pages).toHaveLength(1);
-    expect(result.pages![0].pageNumber).toBe(1);
-    expect(result.pages![0].content).toBe(text);
+    // Text files don't have pages (no page number citations for .txt files)
+    expect(result.pages).toBeUndefined();
   });
 
   it('should handle empty text', async () => {
@@ -20,7 +19,7 @@ describe('extractText', () => {
     const result = await extractText(buffer);
 
     expect(result.text).toBe('');
-    expect(result.pages).toHaveLength(1);
+    expect(result.pages).toBeUndefined();
   });
 
   it('should handle unicode text', async () => {

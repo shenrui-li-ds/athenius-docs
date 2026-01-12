@@ -1,26 +1,39 @@
-import { createClient } from '@/lib/supabase/server';
-import { semanticSearch, hybridSearch, entityBoostedSearch } from '@/lib/retrieval/semantic-search';
-import { synthesize, synthesizeStream } from '@/lib/generation/synthesizer';
-import { NextResponse } from 'next/server';
-import type { QueryRequest, QueryMode, QueryStreamEvent } from '@/lib/types';
+/**
+ * External API: Query documents
+ * Used by Athenius Search to query user's documents
+ * Supports streaming responses
+ */
 
+import { createAdminClient } from '@/lib/supabase/server';
+import { entityBoostedSearch } from '@/lib/retrieval/semantic-search';
+import { synthesize, synthesizeStream } from '@/lib/generation/synthesizer';
+import { validateApiAuth, apiAuthError } from '@/lib/api/auth';
+import { NextResponse } from 'next/server';
+import type { QueryMode, QueryStreamEvent } from '@/lib/types';
+
+interface QueryRequestBody {
+  query: string;
+  fileIds: string[];
+  mode?: QueryMode;
+  stream?: boolean;
+}
+
+/**
+ * POST /api/v1/files/query - Query user's documents
+ */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-
-    // Check authentication
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = validateApiAuth(request);
+    if (!auth.success) {
+      return apiAuthError(auth);
     }
 
+    const { userId } = auth;
+    const supabase = createAdminClient();
+
     // Parse request body
-    const body = (await request.json()) as QueryRequest;
-    const { query, fileIds, mode = 'simple' } = body;
+    const body = (await request.json()) as QueryRequestBody;
+    const { query, fileIds, mode = 'simple', stream = false } = body;
 
     // Validate request
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
@@ -35,7 +48,7 @@ export async function POST(request: Request) {
     const { data: files, error: filesError } = await supabase
       .from('file_uploads')
       .select('id, status')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .in('id', fileIds);
 
     if (filesError) {
@@ -58,50 +71,32 @@ export async function POST(request: Request) {
       );
     }
 
-    // Determine search method and parameters based on mode
+    // Determine search parameters based on mode
     const topK = mode === 'detailed' || mode === 'deep' ? 25 : 10;
-    // Phase 3: Use entity-boosted search (falls back to semantic if no entities)
-    const useEntitySearch = true;
-    console.log(`Query: "${query.trim()}", fileIds: ${fileIds.join(', ')}, topK: ${topK}, entitySearch: ${useEntitySearch}`);
 
-    // Perform search (entity-boosted for all modes, falls back gracefully)
-    const chunks = useEntitySearch
-      ? await entityBoostedSearch(query.trim(), fileIds, topK)
-      : await semanticSearch(query.trim(), fileIds, topK);
-    console.log(`Search returned ${chunks.length} chunks`);
+    // Perform entity-boosted search
+    const chunks = await entityBoostedSearch(query.trim(), fileIds, topK);
 
     if (chunks.length === 0) {
-      console.warn('No chunks found - returning empty result');
       return NextResponse.json({
         content: 'No relevant content was found in the uploaded documents.',
         sources: [],
       });
     }
 
-    // Log the top chunks for debugging
-    console.log('Top chunks:', chunks.slice(0, 3).map(c => ({
-      similarity: c.similarity?.toFixed(4),
-      method: c.retrievalMethod || 'semantic',
-      contentPreview: c.content.substring(0, 100) + '...',
-    })));
-
     const validMode: QueryMode = ['simple', 'detailed', 'deep'].includes(mode) ? mode : 'simple';
 
     // Check if client wants streaming
-    const acceptsStream = request.headers.get('accept')?.includes('text/event-stream');
-
-    if (acceptsStream) {
-      // Return Server-Sent Events stream
+    if (stream) {
       const encoder = new TextEncoder();
 
-      const stream = new ReadableStream({
+      const readableStream = new ReadableStream({
         async start(controller) {
           try {
             for await (const event of synthesizeStream(query.trim(), chunks, validMode)) {
               const data = `data: ${JSON.stringify(event)}\n\n`;
               controller.enqueue(encoder.encode(data));
 
-              // If error event, also close the stream
               if (event.type === 'error') {
                 controller.close();
                 return;
@@ -119,7 +114,7 @@ export async function POST(request: Request) {
         },
       });
 
-      return new Response(stream, {
+      return new Response(readableStream, {
         headers: {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
@@ -128,11 +123,11 @@ export async function POST(request: Request) {
       });
     }
 
-    // Non-streaming fallback (existing behavior)
+    // Non-streaming response
     const result = await synthesize(query.trim(), chunks, validMode);
     return NextResponse.json(result);
   } catch (error) {
-    console.error('Query error:', error);
+    console.error('API: Query error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Query failed' },
       { status: 500 }

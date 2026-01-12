@@ -69,13 +69,14 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
   };
 
   return (
-    <div className="rounded-lg border border-[var(--border-color)] overflow-hidden">
+    <div className="rounded-lg border border-[var(--border-color)]">
       {/* Main file row */}
       <div
         className={`
-          flex items-center gap-3 p-3 transition-colors
+          flex items-center gap-3 p-3 transition-colors rounded-t-lg
           ${isSelected && isReady ? 'bg-[var(--accent-muted)]' : 'bg-[var(--card-background)]'}
           ${isReady ? 'cursor-pointer hover:bg-[var(--hover-background)]' : ''}
+          ${isReady && onToggleEntities && !isEntitiesReady ? '' : 'rounded-b-lg'}
         `}
         onClick={isReady ? onSelect : undefined}
       >
@@ -131,7 +132,7 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
 
       {/* Deep Analysis section - only show for ready files that don't have entities yet */}
       {isReady && onToggleEntities && !isEntitiesReady && (
-        <div className="border-t border-[var(--border-color)] bg-[var(--background)] px-3 py-2">
+        <div className="border-t border-[var(--border-color)] bg-[var(--background)] px-3 py-2 rounded-b-lg">
           {isEntitiesProcessing ? (
             // Processing state - show progress
             <div className="flex items-center gap-3">
@@ -156,19 +157,19 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
               </div>
             </div>
           ) : (
-            // Ready to enable state - show button
-            <button
-              onClick={handleToggleEntities}
-              disabled={isTogglingEntities}
-              className={`
-                w-full flex items-center gap-3 p-2 rounded-md transition-all text-left
-                bg-purple-50 dark:bg-purple-900/20
-                hover:bg-purple-100 dark:hover:bg-purple-900/30
-                border border-purple-200 dark:border-purple-800
-                ${isTogglingEntities ? 'opacity-60 cursor-wait' : 'cursor-pointer'}
-              `}
-            >
-              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-purple-500 flex items-center justify-center">
+            // Ready to enable state - show button with instant tooltip
+            <div className="relative group">
+              <button
+                onClick={handleToggleEntities}
+                disabled={isTogglingEntities}
+                className={`
+                  w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-all
+                  bg-purple-600 dark:bg-purple-700
+                  hover:bg-purple-700 dark:hover:bg-purple-600
+                  border border-purple-500 dark:border-purple-600
+                  ${isTogglingEntities ? 'opacity-60 cursor-wait' : 'cursor-pointer'}
+                `}
+              >
                 {isTogglingEntities ? (
                   <span className="block h-4 w-4 animate-spin border-2 border-white border-t-transparent rounded-full" />
                 ) : (
@@ -176,19 +177,16 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
                     <path d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                <span className="text-sm font-medium text-white">
                   Enable Deep Analysis
-                </p>
-                <p className="text-xs text-purple-600 dark:text-purple-400">
-                  Extract entities & relationships for better multi-hop reasoning
-                </p>
+                </span>
+              </button>
+              {/* Instant tooltip */}
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900/50 dark:bg-gray-700/50 backdrop-blur-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                Extract entities &amp; relationships for better multi-hop reasoning
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900/50 dark:border-t-gray-700/50" />
               </div>
-              <svg className="h-5 w-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            </div>
           )}
         </div>
       )}
