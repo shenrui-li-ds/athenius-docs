@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { User } from '@supabase/supabase-js';
-import type { FileUpload, QueryMode, Source } from '@/lib/types';
+import type { FileUpload, QueryMode, Source, QueryStreamEvent } from '@/lib/types';
 import { FileUploader } from './FileUploader';
 import { FileList } from './FileList';
 import { QueryInput } from './QueryInput';
@@ -19,6 +19,7 @@ export function DocsApp({ user }: DocsAppProps) {
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(true);
   const [isQuerying, setIsQuerying] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [result, setResult] = useState<{ content: string; sources: Source[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dbWarning, setDbWarning] = useState<string | null>(null);
@@ -134,13 +135,17 @@ export function DocsApp({ user }: DocsAppProps) {
     }
 
     setIsQuerying(true);
+    setIsStreaming(true);
     setError(null);
-    setResult(null);
+    setResult({ content: '', sources: [] });
 
     try {
       const response = await fetch('/api/files/query', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
         body: JSON.stringify({
           query,
           fileIds: selectedFileIds,
@@ -153,12 +158,54 @@ export function DocsApp({ user }: DocsAppProps) {
         throw new Error(errorData.error || 'Query failed');
       }
 
-      const data = await response.json();
-      setResult(data);
+      // Handle streaming response
+      const contentType = response.headers.get('content-type');
+      if (contentType?.includes('text/event-stream') && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const event: QueryStreamEvent = JSON.parse(line.slice(6));
+
+                if (event.type === 'sources') {
+                  setResult(prev => ({ content: prev?.content || '', sources: event.sources }));
+                } else if (event.type === 'token') {
+                  setResult(prev => ({
+                    sources: prev?.sources || [],
+                    content: (prev?.content || '') + event.content,
+                  }));
+                } else if (event.type === 'done') {
+                  setIsStreaming(false);
+                } else if (event.type === 'error') {
+                  throw new Error(event.message);
+                }
+              } catch (parseErr) {
+                console.warn('Failed to parse SSE event:', line);
+              }
+            }
+          }
+        }
+      } else {
+        // Fallback to non-streaming JSON response
+        const data = await response.json();
+        setResult(data);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Query failed');
     } finally {
       setIsQuerying(false);
+      setIsStreaming(false);
     }
   };
 
@@ -259,6 +306,7 @@ export function DocsApp({ user }: DocsAppProps) {
                   content={result?.content || ''}
                   sources={result?.sources || []}
                   isLoading={isQuerying}
+                  isStreaming={isStreaming}
                   error={error || undefined}
                 />
               </div>

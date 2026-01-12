@@ -62,7 +62,10 @@ export interface Chunk {
   tokenCount: number;
 }
 
-// Retrieved chunk from semantic search
+// Retrieval method for hybrid search
+export type RetrievalMethod = 'semantic' | 'keyword' | 'hybrid';
+
+// Retrieved chunk from semantic search (Phase 2: extended for hybrid search)
 export interface RetrievedChunk {
   id: string;
   content: string;
@@ -71,6 +74,11 @@ export interface RetrievedChunk {
   page?: number;
   section?: string;
   similarity: number;
+  // Phase 2 additions
+  chunkIndex?: number;
+  retrievalMethod?: RetrievalMethod;
+  keywordScore?: number;
+  combinedScore?: number;
 }
 
 // Source format (Tavily-compatible for Athenius Search integration)
@@ -147,4 +155,30 @@ export const FILE_CONSTRAINTS = {
     'text/plain': 'txt',
     'text/markdown': 'md',
   } as const,
+};
+
+// ============================================
+// Phase 2: Streaming Types
+// ============================================
+
+// Streaming event types for Server-Sent Events
+export type QueryStreamEvent =
+  | { type: 'sources'; sources: Source[] }
+  | { type: 'token'; content: string }
+  | { type: 'done'; usage?: { promptTokens?: number; completionTokens?: number } }
+  | { type: 'error'; message: string };
+
+// Hybrid search configuration
+export interface HybridSearchConfig {
+  semanticWeight: number;  // Weight for semantic search (0-1)
+  keywordWeight: number;   // Weight for keyword search (0-1)
+  rrf_k: number;           // RRF constant (typically 60)
+}
+
+// Default hybrid search configuration
+// 80/20 semantic/keyword - prioritize semantic understanding for nuanced questions
+export const DEFAULT_HYBRID_CONFIG: HybridSearchConfig = {
+  semanticWeight: 0.8,
+  keywordWeight: 0.2,
+  rrf_k: 60,
 };

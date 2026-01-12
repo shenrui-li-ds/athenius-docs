@@ -1,19 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Source } from '@/lib/types';
 
 interface ResultDisplayProps {
   content: string;
   sources: Source[];
   isLoading?: boolean;
+  isStreaming?: boolean;
   error?: string;
 }
 
-export function ResultDisplay({ content, sources, isLoading, error }: ResultDisplayProps) {
+export function ResultDisplay({ content, sources, isLoading, isStreaming, error }: ResultDisplayProps) {
   const [showSources, setShowSources] = useState(false);
 
-  if (isLoading) {
+  // Auto-expand sources when they arrive during streaming
+  useEffect(() => {
+    if (sources.length > 0 && isStreaming) {
+      setShowSources(true);
+    }
+  }, [sources.length, isStreaming]);
+
+  // Show loading skeleton only when loading and no content yet
+  if (isLoading && !content && sources.length === 0) {
     return (
       <div className="p-6 border border-gray-200 dark:border-gray-700 rounded-lg">
         <div className="animate-pulse space-y-3">
@@ -34,7 +43,8 @@ export function ResultDisplay({ content, sources, isLoading, error }: ResultDisp
     );
   }
 
-  if (!content) {
+  // Show component if we have sources or content (or streaming)
+  if (!content && sources.length === 0 && !isStreaming) {
     return null;
   }
 
@@ -42,13 +52,24 @@ export function ResultDisplay({ content, sources, isLoading, error }: ResultDisp
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
       {/* Response content */}
       <div className="p-6">
-        <div className="prose dark:prose-invert max-w-none">
-          {content.split('\n').map((paragraph, index) => (
-            <p key={index} className="mb-2 last:mb-0">
-              {paragraph}
-            </p>
-          ))}
-        </div>
+        {content ? (
+          <div className="prose dark:prose-invert max-w-none">
+            {content.split('\n').map((paragraph, index) => (
+              <p key={index} className="mb-2 last:mb-0">
+                {paragraph}
+                {/* Show blinking cursor at end during streaming */}
+                {isStreaming && index === content.split('\n').length - 1 && (
+                  <span className="inline-block w-2 h-4 ml-1 bg-blue-500 dark:bg-blue-400 animate-pulse" />
+                )}
+              </p>
+            ))}
+          </div>
+        ) : isStreaming ? (
+          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+            <span className="inline-block w-2 h-4 bg-blue-500 dark:bg-blue-400 animate-pulse" />
+            <span className="text-sm">Generating response...</span>
+          </div>
+        ) : null}
       </div>
 
       {/* Sources section */}
@@ -58,7 +79,14 @@ export function ResultDisplay({ content, sources, isLoading, error }: ResultDisp
             onClick={() => setShowSources(!showSources)}
             className="w-full px-6 py-3 flex items-center justify-between text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
-            <span>Sources ({sources.length})</span>
+            <span className="flex items-center gap-2">
+              Sources ({sources.length})
+              {isStreaming && (
+                <span className="text-xs text-blue-500 dark:text-blue-400">
+                  Retrieved
+                </span>
+              )}
+            </span>
             <svg
               className={`h-4 w-4 transition-transform ${showSources ? 'rotate-180' : ''}`}
               fill="none"
@@ -89,6 +117,11 @@ function SourceCard({ source, index }: { source: Source; index: number }) {
   const pageMatch = source.url.match(/#page=(\d+)/);
   const page = pageMatch ? pageMatch[1] : null;
 
+  // Parse section from title if available (format: "filename, Page X - Section Name")
+  const sectionMatch = source.title.match(/ - (.+)$/);
+  const section = sectionMatch ? sectionMatch[1] : null;
+  const displayTitle = section ? source.title.replace(/ - .+$/, '') : source.title;
+
   return (
     <div className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg text-sm">
       <div className="flex items-start gap-2">
@@ -96,10 +129,16 @@ function SourceCard({ source, index }: { source: Source; index: number }) {
           {index}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{source.title}</p>
-          {page && (
-            <p className="text-xs text-gray-500 dark:text-gray-400">Page {page}</p>
-          )}
+          <p className="font-medium truncate">{displayTitle}</p>
+          <div className="flex flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
+            {page && <span>Page {page}</span>}
+            {section && (
+              <>
+                {page && <span>•</span>}
+                <span className="italic">{section}</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

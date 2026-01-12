@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { embedText } from '@/lib/embeddings/openai';
-import type { RetrievedChunk } from '@/lib/types';
+import type { RetrievedChunk, HybridSearchConfig, RetrievalMethod } from '@/lib/types';
+import { DEFAULT_HYBRID_CONFIG } from '@/lib/types';
 
 const DEFAULT_TOP_K = 10;
 
@@ -200,6 +201,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 /**
  * Assemble context from retrieved chunks
+ * Phase 2: Enhanced with section titles in citations
  */
 export function assembleContext(
   chunks: RetrievedChunk[],
@@ -219,9 +221,18 @@ export function assembleContext(
       break;
     }
 
-    const source = chunk.page
-      ? `[Source: ${chunk.filename}, Page ${chunk.page}]`
-      : `[Source: ${chunk.filename}]`;
+    // Build rich source citation with section title if available
+    const sourceParts = [chunk.filename];
+    if (chunk.page) {
+      sourceParts.push(`Page ${chunk.page}`);
+    }
+    if (chunk.section) {
+      sourceParts.push(`Section: "${chunk.section}"`);
+    }
+    if (chunk.chunkIndex !== undefined) {
+      sourceParts.push(`Chunk ${chunk.chunkIndex}`);
+    }
+    const source = `[Source: ${sourceParts.join(', ')}]`;
 
     context += `\n\n${source}\n${chunk.content}`;
     tokenCount += chunkTokens;
@@ -229,4 +240,171 @@ export function assembleContext(
   }
 
   return { context: context.trim(), usedChunks };
+}
+
+/**
+ * Perform keyword search using PostgreSQL full-text search
+ * Phase 2: Uses the keyword_search_chunks RPC function
+ */
+export async function keywordSearch(
+  query: string,
+  fileIds: string[],
+  topK: number = DEFAULT_TOP_K
+): Promise<RetrievedChunk[]> {
+  if (fileIds.length === 0 || !query.trim()) {
+    return [];
+  }
+
+  const supabase = createAdminClient();
+
+  try {
+    const { data, error } = await supabase.rpc('keyword_search_chunks', {
+      search_query: query,
+      file_ids: fileIds,
+      match_count: topK,
+    });
+
+    if (error) {
+      console.warn('Keyword search RPC failed:', error.message);
+      return [];
+    }
+
+    return (data || []).map((row: {
+      id: string;
+      content: string;
+      filename: string;
+      file_id: string;
+      page_number: number | null;
+      section_title: string | null;
+      rank: number;
+    }) => ({
+      id: row.id,
+      content: row.content,
+      filename: row.filename,
+      fileId: row.file_id,
+      page: row.page_number || undefined,
+      section: row.section_title || undefined,
+      similarity: 0, // Keyword search doesn't use similarity
+      keywordScore: row.rank,
+      retrievalMethod: 'keyword' as RetrievalMethod,
+    }));
+  } catch (err) {
+    console.error('Keyword search error:', err);
+    return [];
+  }
+}
+
+/**
+ * Perform hybrid search combining semantic and keyword search
+ * Uses Reciprocal Rank Fusion (RRF) to merge results
+ * Phase 2: Core hybrid search implementation
+ */
+export async function hybridSearch(
+  query: string,
+  fileIds: string[],
+  topK: number = DEFAULT_TOP_K,
+  config: Partial<HybridSearchConfig> = {}
+): Promise<RetrievedChunk[]> {
+  const { semanticWeight, keywordWeight, rrf_k } = {
+    ...DEFAULT_HYBRID_CONFIG,
+    ...config,
+  };
+
+  if (fileIds.length === 0) {
+    return [];
+  }
+
+  // Run semantic and keyword search in parallel
+  const [semanticResults, keywordResults] = await Promise.all([
+    semanticSearch(query, fileIds, topK * 2), // Get more candidates for RRF
+    keywordSearch(query, fileIds, topK * 2),
+  ]);
+
+  console.log(`Hybrid search: ${semanticResults.length} semantic, ${keywordResults.length} keyword results`);
+
+  // Mark retrieval method for semantic results
+  const semanticWithMethod = semanticResults.map((chunk, idx) => ({
+    ...chunk,
+    retrievalMethod: 'semantic' as RetrievalMethod,
+    semanticRank: idx + 1,
+  }));
+
+  // Mark keyword results with rank
+  const keywordWithRank = keywordResults.map((chunk, idx) => ({
+    ...chunk,
+    keywordRank: idx + 1,
+  }));
+
+  // Build map of all unique chunks
+  const chunkMap = new Map<string, RetrievedChunk & {
+    semanticRank?: number;
+    keywordRank?: number;
+    rrfScore: number;
+  }>();
+
+  // Add semantic results
+  for (const chunk of semanticWithMethod) {
+    chunkMap.set(chunk.id, {
+      ...chunk,
+      rrfScore: 0,
+    });
+  }
+
+  // Merge keyword results
+  for (const chunk of keywordWithRank) {
+    const existing = chunkMap.get(chunk.id);
+    if (existing) {
+      // Chunk found in both - merge scores
+      existing.keywordRank = chunk.keywordRank;
+      existing.keywordScore = chunk.keywordScore;
+    } else {
+      // Keyword-only result
+      chunkMap.set(chunk.id, {
+        ...chunk,
+        retrievalMethod: 'keyword' as RetrievalMethod,
+        rrfScore: 0,
+      });
+    }
+  }
+
+  // Calculate RRF scores
+  // RRF formula: score(d) = Σ weight_i * (1 / (k + rank_i))
+  for (const chunk of chunkMap.values()) {
+    let rrfScore = 0;
+
+    if (chunk.semanticRank) {
+      rrfScore += semanticWeight * (1 / (rrf_k + chunk.semanticRank));
+    }
+
+    if (chunk.keywordRank) {
+      rrfScore += keywordWeight * (1 / (rrf_k + chunk.keywordRank));
+    } else {
+      // Penalty for not appearing in keyword results
+      rrfScore += keywordWeight * (1 / (rrf_k + topK * 3));
+    }
+
+    chunk.rrfScore = rrfScore;
+    chunk.combinedScore = rrfScore;
+
+    // Update retrieval method if found in both
+    if (chunk.semanticRank && chunk.keywordRank) {
+      chunk.retrievalMethod = 'hybrid';
+    }
+  }
+
+  // Sort by RRF score and return top K
+  const results = Array.from(chunkMap.values())
+    .sort((a, b) => b.rrfScore - a.rrfScore)
+    .slice(0, topK)
+    .map(({ semanticRank, keywordRank, rrfScore, ...chunk }) => chunk);
+
+  console.log('Hybrid search: top combined scores:',
+    results.slice(0, 3).map(r => ({
+      method: r.retrievalMethod,
+      combined: r.combinedScore?.toFixed(4),
+      similarity: r.similarity.toFixed(4),
+    }))
+  );
+
+  return results;
 }
