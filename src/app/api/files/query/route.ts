@@ -60,14 +60,24 @@ export async function POST(request: Request) {
 
     // Perform semantic search
     const topK = mode === 'detailed' || mode === 'deep' ? 15 : 10;
+    console.log(`Query: "${query.trim()}", fileIds: ${fileIds.join(', ')}, topK: ${topK}`);
+
     const chunks = await semanticSearch(query.trim(), fileIds, topK);
+    console.log(`Semantic search returned ${chunks.length} chunks`);
 
     if (chunks.length === 0) {
+      console.warn('No chunks found - returning empty result');
       return NextResponse.json({
         content: 'No relevant content was found in the uploaded documents.',
         sources: [],
       });
     }
+
+    // Log the top chunks for debugging
+    console.log('Top chunks:', chunks.slice(0, 3).map(c => ({
+      similarity: c.similarity?.toFixed(4),
+      contentPreview: c.content.substring(0, 100) + '...',
+    })));
 
     // Synthesize response
     const validMode: QueryMode = ['simple', 'detailed', 'deep'].includes(mode) ? mode : 'simple';

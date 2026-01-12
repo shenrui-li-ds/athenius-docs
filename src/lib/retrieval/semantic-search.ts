@@ -6,6 +6,7 @@ const DEFAULT_TOP_K = 10;
 
 /**
  * Perform semantic search across file chunks
+ * Note: Uses admin client with direct file_id filtering (bypasses RLS)
  */
 export async function semanticSearch(
   query: string,
@@ -19,8 +20,10 @@ export async function semanticSearch(
   // Generate query embedding
   const queryEmbedding = await embedText(query);
 
-  // Search in database
-  const chunks = await searchChunks(queryEmbedding, fileIds, topK);
+  // Use fallback search directly since RPC requires auth.uid() which isn't available
+  // when using the service role key. The fallback search filters by file_id directly.
+  const supabase = createAdminClient();
+  const chunks = await fallbackSearch(supabase, queryEmbedding, fileIds, topK);
 
   return chunks;
 }
@@ -47,9 +50,12 @@ async function searchChunks(
 
   if (error) {
     // Fall back to basic query if RPC doesn't exist
-    console.warn('RPC search_file_chunks not available, using fallback query');
+    console.warn('RPC search_file_chunks not available:', error.message);
+    console.log('Using fallback search for fileIds:', fileIds);
     return fallbackSearch(supabase, queryEmbedding, fileIds, topK);
   }
+
+  console.log(`RPC search returned ${data?.length || 0} results`);
 
   return (data || []).map((row: {
     id: string;
@@ -71,6 +77,33 @@ async function searchChunks(
 }
 
 /**
+ * Parse pgvector embedding from database format
+ * pgvector returns embeddings as strings like "[0.1,0.2,...]"
+ */
+function parseEmbedding(embedding: unknown): number[] | null {
+  if (!embedding) return null;
+
+  // If it's already an array, return it
+  if (Array.isArray(embedding)) {
+    return embedding;
+  }
+
+  // If it's a string (pgvector format), parse it
+  if (typeof embedding === 'string') {
+    try {
+      // Remove brackets and split by comma
+      const cleaned = embedding.replace(/^\[|\]$/g, '');
+      return cleaned.split(',').map((s) => parseFloat(s.trim()));
+    } catch (e) {
+      console.error('Failed to parse embedding string:', e);
+      return null;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Fallback search without RPC (less efficient but works without stored procedure)
  */
 async function fallbackSearch(
@@ -79,6 +112,8 @@ async function fallbackSearch(
   fileIds: string[],
   topK: number
 ): Promise<RetrievedChunk[]> {
+  console.log('Fallback search: fetching chunks for files:', fileIds);
+
   // Get chunks for the specified files
   const { data: chunks, error } = await supabase
     .from('file_chunks')
@@ -97,9 +132,23 @@ async function fallbackSearch(
     throw new Error(`Failed to search chunks: ${error?.message || 'No data'}`);
   }
 
+  console.log(`Fallback search: found ${chunks.length} chunks`);
+
+  // Debug: check first chunk's embedding format
+  if (chunks.length > 0) {
+    const firstEmbedding = chunks[0].embedding;
+    console.log('First chunk embedding type:', typeof firstEmbedding);
+    if (firstEmbedding) {
+      const parsed = parseEmbedding(firstEmbedding);
+      console.log('Parsed embedding length:', parsed?.length);
+    } else {
+      console.warn('First chunk has no embedding!');
+    }
+  }
+
   // Calculate similarity and sort
   const withSimilarity = chunks.map((chunk) => {
-    const embedding = chunk.embedding as number[] | null;
+    const embedding = parseEmbedding(chunk.embedding);
     const similarity = embedding ? cosineSimilarity(queryEmbedding, embedding) : 0;
     // file_uploads is a single object due to !inner join, but TS infers as array
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,9 +167,13 @@ async function fallbackSearch(
   });
 
   // Sort by similarity and return top K
-  return withSimilarity
+  const results = withSimilarity
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, topK);
+
+  console.log('Fallback search: top similarities:', results.slice(0, 3).map(r => r.similarity.toFixed(4)));
+
+  return results;
 }
 
 /**

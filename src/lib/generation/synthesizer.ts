@@ -12,7 +12,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const MODEL = 'gpt-4o-mini';
+const MODEL = 'gpt-5-mini-2025-08-07';
 
 /**
  * Synthesize a response from retrieved chunks
@@ -36,15 +36,14 @@ export async function synthesize(
   // Select system prompt based on mode
   const systemPrompt = getSystemPrompt(mode);
 
-  // Generate response
+  // Generate response (no temperature for thinking models, use max_completion_tokens)
   const response = await openai.chat.completions.create({
     model: MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: generateUserPrompt(query, context) },
     ],
-    temperature: 0.3, // Lower temperature for more factual responses
-    max_tokens: mode === 'detailed' ? 2000 : 1000,
+    max_completion_tokens: mode === 'detailed' ? 2000 : 1000,
   });
 
   const content = response.choices[0]?.message?.content || 'Unable to generate response.';
