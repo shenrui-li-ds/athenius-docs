@@ -6,8 +6,12 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { deleteFile } from '@/lib/supabase/storage';
 import { deleteFileChunks } from '@/lib/processing/pipeline';
-import { validateApiAuth, apiAuthError } from '@/lib/api/auth';
+import { validateApiAuth, apiAuthError, rateLimitError } from '@/lib/api/auth';
+import { checkRateLimit, getRateLimitHeaders } from '@/lib/api/rate-limit';
 import { NextResponse } from 'next/server';
+
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * GET /api/v1/files/[id] - Get file details
@@ -23,7 +27,20 @@ export async function GET(
     }
 
     const { userId } = auth;
+
+    // Check rate limit
+    const rateLimit = checkRateLimit(userId, 'default');
+    if (!rateLimit.allowed) {
+      return rateLimitError(rateLimit.retryAfter!);
+    }
+
     const { id: fileId } = await params;
+
+    // Validate fileId format
+    if (!UUID_REGEX.test(fileId)) {
+      return NextResponse.json({ error: 'Invalid file ID format' }, { status: 400 });
+    }
+
     const supabase = createAdminClient();
 
     // Get file details
@@ -38,13 +55,12 @@ export async function GET(
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ file });
+    return NextResponse.json({ file }, {
+      headers: getRateLimitHeaders(rateLimit),
+    });
   } catch (error) {
     console.error('API: Get file error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to get file' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get file' }, { status: 500 });
   }
 }
 
@@ -62,7 +78,20 @@ export async function DELETE(
     }
 
     const { userId } = auth;
+
+    // Check rate limit
+    const rateLimit = checkRateLimit(userId, 'default');
+    if (!rateLimit.allowed) {
+      return rateLimitError(rateLimit.retryAfter!);
+    }
+
     const { id: fileId } = await params;
+
+    // Validate fileId format
+    if (!UUID_REGEX.test(fileId)) {
+      return NextResponse.json({ error: 'Invalid file ID format' }, { status: 400 });
+    }
+
     const supabase = createAdminClient();
 
     // Get file to verify ownership and get storage path
@@ -90,18 +119,18 @@ export async function DELETE(
       .eq('id', fileId);
 
     if (deleteError) {
-      throw new Error(`Failed to delete file record: ${deleteError.message}`);
+      console.error('API: Delete file record error:', deleteError);
+      return NextResponse.json({ error: 'Failed to delete file' }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
       message: 'File deleted successfully',
+    }, {
+      headers: getRateLimitHeaders(rateLimit),
     });
   } catch (error) {
     console.error('API: Delete file error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to delete file' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to delete file' }, { status: 500 });
   }
 }

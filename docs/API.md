@@ -107,6 +107,20 @@ POST /api/v1/files
 | Text | `.txt` | 10MB |
 | Markdown | `.md` | 10MB |
 
+**Security Scanning:**
+
+Files are scanned for malware using VirusTotal API (hash lookup). The response includes a `scanned` field indicating whether scanning was performed.
+
+| File Type | Scan Rate | Reason |
+|-----------|-----------|--------|
+| PDF | 75% | Higher risk (can contain exploits) |
+| TXT/MD | 20% | Lower risk (plain text), random sampling |
+
+Files identified as malicious are rejected with a 400 error. Scanning gracefully degrades when:
+- API quota exhausted (500 req/day free tier)
+- Rate limited (4 req/min free tier)
+- Network errors
+
 **Example:**
 
 ```bash
@@ -378,7 +392,32 @@ All error responses follow this format:
 
 ## Rate Limits
 
-Currently no rate limits are enforced. This may change in the future.
+Rate limits are enforced per-user to prevent abuse:
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| Query (`/api/v1/files/query`) | 30 requests | 1 minute |
+| Upload (`POST /api/v1/files`) | 10 requests | 1 minute |
+| Entity extraction (`POST /api/v1/files/[id]/entities`) | 5 requests | 1 minute |
+| Other endpoints | 100 requests | 1 minute |
+
+**Rate Limit Headers:**
+
+All responses include rate limit headers:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Remaining` | Requests remaining in current window |
+| `X-RateLimit-Reset` | Unix timestamp when window resets |
+| `Retry-After` | Seconds to wait (only on 429 response) |
+
+**Rate Limit Error (429):**
+
+```json
+{
+  "error": "Too many requests. Please slow down."
+}
+```
 
 ---
 

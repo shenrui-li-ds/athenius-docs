@@ -4,13 +4,17 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server';
-import { validateApiAuth, apiAuthError } from '@/lib/api/auth';
+import { validateApiAuth, apiAuthError, rateLimitError } from '@/lib/api/auth';
+import { checkRateLimit, getRateLimitHeaders } from '@/lib/api/rate-limit';
 import {
   enableEntityExtraction,
   disableEntityExtraction,
   getFileEntityStats,
 } from '@/lib/entities';
 import { NextResponse } from 'next/server';
+
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * GET /api/v1/files/[id]/entities - Get entity extraction status and stats
@@ -26,7 +30,20 @@ export async function GET(
     }
 
     const { userId } = auth;
+
+    // Check rate limit
+    const rateLimit = checkRateLimit(userId, 'default');
+    if (!rateLimit.allowed) {
+      return rateLimitError(rateLimit.retryAfter!);
+    }
+
     const { id: fileId } = await params;
+
+    // Validate fileId format
+    if (!UUID_REGEX.test(fileId)) {
+      return NextResponse.json({ error: 'Invalid file ID format' }, { status: 400 });
+    }
+
     const supabase = createAdminClient();
 
     // Get file to check ownership and entity status
@@ -53,6 +70,8 @@ export async function GET(
       entitiesStatus: file.entities_status,
       entitiesProgress: file.entities_progress,
       stats,
+    }, {
+      headers: getRateLimitHeaders(rateLimit),
     });
   } catch (error) {
     console.error('API: Get entities error:', error);
@@ -77,7 +96,20 @@ export async function POST(
     }
 
     const { userId } = auth;
+
+    // Check rate limit (stricter for entity extraction - expensive operation)
+    const rateLimit = checkRateLimit(userId, 'entities');
+    if (!rateLimit.allowed) {
+      return rateLimitError(rateLimit.retryAfter!);
+    }
+
     const { id: fileId } = await params;
+
+    // Validate fileId format
+    if (!UUID_REGEX.test(fileId)) {
+      return NextResponse.json({ error: 'Invalid file ID format' }, { status: 400 });
+    }
+
     const supabase = createAdminClient();
 
     // Get file to check ownership and status
@@ -117,11 +149,13 @@ export async function POST(
       success: true,
       message: 'Entity extraction started',
       status: 'processing',
+    }, {
+      headers: getRateLimitHeaders(rateLimit),
     });
   } catch (error) {
     console.error('API: Enable entities error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to enable entity extraction' },
+      { error: 'Failed to enable entity extraction' },
       { status: 500 }
     );
   }
@@ -141,7 +175,20 @@ export async function DELETE(
     }
 
     const { userId } = auth;
+
+    // Check rate limit
+    const rateLimit = checkRateLimit(userId, 'default');
+    if (!rateLimit.allowed) {
+      return rateLimitError(rateLimit.retryAfter!);
+    }
+
     const { id: fileId } = await params;
+
+    // Validate fileId format
+    if (!UUID_REGEX.test(fileId)) {
+      return NextResponse.json({ error: 'Invalid file ID format' }, { status: 400 });
+    }
+
     const supabase = createAdminClient();
 
     // Get file to check ownership
@@ -162,6 +209,8 @@ export async function DELETE(
     return NextResponse.json({
       success: true,
       message: 'Entity extraction disabled',
+    }, {
+      headers: getRateLimitHeaders(rateLimit),
     });
   } catch (error) {
     console.error('API: Disable entities error:', error);

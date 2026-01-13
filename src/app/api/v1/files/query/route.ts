@@ -7,9 +7,15 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { entityBoostedSearch } from '@/lib/retrieval/semantic-search';
 import { synthesize, synthesizeStream } from '@/lib/generation/synthesizer';
-import { validateApiAuth, apiAuthError } from '@/lib/api/auth';
+import { validateApiAuth, apiAuthError, rateLimitError } from '@/lib/api/auth';
+import { checkRateLimit, getRateLimitHeaders } from '@/lib/api/rate-limit';
 import { NextResponse } from 'next/server';
 import type { QueryMode, QueryStreamEvent } from '@/lib/types';
+
+// Query constraints
+const MAX_QUERY_LENGTH = 2000;
+const MAX_FILE_IDS = 20;
+const STREAM_TIMEOUT_MS = 120_000; // 2 minute timeout for streaming
 
 interface QueryRequestBody {
   query: string;
@@ -29,19 +35,48 @@ export async function POST(request: Request) {
     }
 
     const { userId } = auth;
+
+    // Check rate limit
+    const rateLimit = checkRateLimit(userId, 'query');
+    if (!rateLimit.allowed) {
+      return rateLimitError(rateLimit.retryAfter!);
+    }
+
     const supabase = createAdminClient();
 
     // Parse request body
     const body = (await request.json()) as QueryRequestBody;
     const { query, fileIds, mode = 'simple', stream = false } = body;
 
-    // Validate request
+    // Validate and sanitize query
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return NextResponse.json({ error: 'Query is required' }, { status: 400 });
     }
 
+    if (query.length > MAX_QUERY_LENGTH) {
+      return NextResponse.json(
+        { error: `Query too long. Maximum ${MAX_QUERY_LENGTH} characters.` },
+        { status: 400 }
+      );
+    }
+
+    // Validate fileIds
     if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
       return NextResponse.json({ error: 'At least one file ID is required' }, { status: 400 });
+    }
+
+    if (fileIds.length > MAX_FILE_IDS) {
+      return NextResponse.json(
+        { error: `Too many files. Maximum ${MAX_FILE_IDS} files per query.` },
+        { status: 400 }
+      );
+    }
+
+    // Validate all fileIds are valid UUIDs
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const invalidIds = fileIds.filter(id => !uuidRegex.test(id));
+    if (invalidIds.length > 0) {
+      return NextResponse.json({ error: 'Invalid file ID format' }, { status: 400 });
     }
 
     // Verify user owns all the files and they are ready
@@ -52,7 +87,8 @@ export async function POST(request: Request) {
       .in('id', fileIds);
 
     if (filesError) {
-      throw new Error(`Failed to verify files: ${filesError.message}`);
+      console.error('API: Failed to verify files:', filesError);
+      return NextResponse.json({ error: 'Failed to verify files' }, { status: 500 });
     }
 
     if (!files || files.length !== fileIds.length) {
@@ -74,8 +110,13 @@ export async function POST(request: Request) {
     // Determine search parameters based on mode
     const topK = mode === 'detailed' || mode === 'deep' ? 25 : 10;
 
+    // Sanitize query - remove potential prompt injection markers
+    const sanitizedQuery = query.trim()
+      .replace(/```/g, '')
+      .replace(/<\/?[a-z][^>]*>/gi, ''); // Remove HTML-like tags
+
     // Perform entity-boosted search
-    const chunks = await entityBoostedSearch(query.trim(), fileIds, topK);
+    const chunks = await entityBoostedSearch(sanitizedQuery, fileIds, topK);
 
     if (chunks.length === 0) {
       return NextResponse.json({
@@ -92,21 +133,35 @@ export async function POST(request: Request) {
 
       const readableStream = new ReadableStream({
         async start(controller) {
+          // Set up timeout
+          const timeoutId = setTimeout(() => {
+            const timeoutEvent: QueryStreamEvent = {
+              type: 'error',
+              message: 'Stream timeout exceeded',
+            };
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(timeoutEvent)}\n\n`));
+            controller.close();
+          }, STREAM_TIMEOUT_MS);
+
           try {
-            for await (const event of synthesizeStream(query.trim(), chunks, validMode)) {
+            for await (const event of synthesizeStream(sanitizedQuery, chunks, validMode)) {
               const data = `data: ${JSON.stringify(event)}\n\n`;
               controller.enqueue(encoder.encode(data));
 
-              if (event.type === 'error') {
+              if (event.type === 'error' || event.type === 'done') {
+                clearTimeout(timeoutId);
                 controller.close();
                 return;
               }
             }
+            clearTimeout(timeoutId);
             controller.close();
           } catch (error) {
+            clearTimeout(timeoutId);
+            console.error('API: Stream error:', error);
             const errorEvent: QueryStreamEvent = {
               type: 'error',
-              message: error instanceof Error ? error.message : 'Stream error',
+              message: 'Stream processing failed',
             };
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
             controller.close();
@@ -119,17 +174,20 @@ export async function POST(request: Request) {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
+          ...getRateLimitHeaders(rateLimit),
         },
       });
     }
 
     // Non-streaming response
-    const result = await synthesize(query.trim(), chunks, validMode);
-    return NextResponse.json(result);
+    const result = await synthesize(sanitizedQuery, chunks, validMode);
+    return NextResponse.json(result, {
+      headers: getRateLimitHeaders(rateLimit),
+    });
   } catch (error) {
     console.error('API: Query error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Query failed' },
+      { error: 'Query failed. Please try again.' },
       { status: 500 }
     );
   }

@@ -6,7 +6,9 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { uploadFile } from '@/lib/supabase/storage';
 import { processFile } from '@/lib/processing/pipeline';
-import { validateApiAuth, apiAuthError } from '@/lib/api/auth';
+import { validateApiAuth, apiAuthError, rateLimitError } from '@/lib/api/auth';
+import { checkRateLimit, getRateLimitHeaders } from '@/lib/api/rate-limit';
+import { scanForMalware } from '@/lib/api/malware-scan';
 import { FILE_CONSTRAINTS } from '@/lib/types';
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
@@ -23,13 +25,20 @@ export async function GET(request: Request) {
     }
 
     const { userId } = auth;
+
+    // Check rate limit
+    const rateLimit = checkRateLimit(userId, 'default');
+    if (!rateLimit.allowed) {
+      return rateLimitError(rateLimit.retryAfter!);
+    }
+
     const supabase = createAdminClient();
 
     // Parse query params
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
-    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10), 1), 100);
+    const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10), 0);
 
     // Build query
     let query = supabase
@@ -40,14 +49,15 @@ export async function GET(request: Request) {
       .range(offset, offset + limit - 1);
 
     // Filter by status if provided
-    if (status) {
+    if (status && ['pending', 'processing', 'ready', 'error'].includes(status)) {
       query = query.eq('status', status);
     }
 
     const { data: files, error: filesError } = await query;
 
     if (filesError) {
-      throw new Error(`Failed to list files: ${filesError.message}`);
+      console.error('API: List files DB error:', filesError);
+      return NextResponse.json({ error: 'Failed to list files' }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -57,13 +67,12 @@ export async function GET(request: Request) {
         offset,
         total: files?.length || 0,
       },
+    }, {
+      headers: getRateLimitHeaders(rateLimit),
     });
   } catch (error) {
     console.error('API: List files error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to list files' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to list files' }, { status: 500 });
   }
 }
 
@@ -79,6 +88,13 @@ export async function POST(request: Request) {
     }
 
     const { userId } = auth;
+
+    // Check rate limit (stricter for uploads)
+    const rateLimit = checkRateLimit(userId, 'upload');
+    if (!rateLimit.allowed) {
+      return rateLimitError(rateLimit.retryAfter!);
+    }
+
     const supabase = createAdminClient();
 
     // Parse form data
@@ -95,6 +111,10 @@ export async function POST(request: Request) {
         { error: `File size exceeds ${FILE_CONSTRAINTS.maxSizeMB}MB limit` },
         { status: 400 }
       );
+    }
+
+    if (file.size === 0) {
+      return NextResponse.json({ error: 'Empty file not allowed' }, { status: 400 });
     }
 
     // Determine file type
@@ -114,6 +134,21 @@ export async function POST(request: Request) {
 
     // Read file buffer
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Scan for malware using VirusTotal (with sampling to conserve quota)
+    const scanResult = await scanForMalware(buffer, sanitizedFilename, fileType);
+    if (!scanResult.clean) {
+      console.warn(`Blocked malware upload from user ${userId}: ${scanResult.threat}`);
+      return NextResponse.json(
+        { error: 'File rejected: potential security threat detected' },
+        { status: 400 }
+      );
+    }
+
+    // Log scan status for monitoring
+    if (scanResult.skippedReason) {
+      console.log(`Malware scan skipped for ${sanitizedFilename}: ${scanResult.skippedReason}`);
+    }
 
     // Upload to Supabase Storage
     const storagePath = await uploadFile(
@@ -137,7 +172,8 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      throw new Error(`Failed to create file record: ${insertError.message}`);
+      console.error('API: Failed to create file record:', insertError);
+      return NextResponse.json({ error: 'Failed to save file' }, { status: 500 });
     }
 
     // Trigger async processing (don't await)
@@ -153,13 +189,13 @@ export async function POST(request: Request) {
       fileSize: file.size,
       status: 'pending',
       message: 'File uploaded, processing started',
+      scanned: scanResult.scanned,
+    }, {
+      headers: getRateLimitHeaders(rateLimit),
     });
   } catch (error) {
     console.error('API: Upload error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Upload failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
 }
 
