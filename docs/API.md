@@ -13,7 +13,9 @@ All endpoints are prefixed with `/api/v1`. Set `DOCS_API_URL` to the base URL (w
 
 ## Authentication
 
-All requests must include:
+### API Authentication (Server-to-Server)
+
+All API requests must include:
 
 | Header | Description |
 |--------|-------------|
@@ -35,6 +37,32 @@ curl -X GET "https://docs.athenius.ai/api/v1/files" \
 | 401 | Missing or invalid API key |
 | 400 | Missing or invalid X-User-ID |
 | 503 | API key not configured on server |
+
+### User Authentication (SSO)
+
+Athenius Docs uses **shared authentication with Athenius Search** via Supabase. Users authenticate through Athenius Search (athenius.io), and the session is shared across subdomains.
+
+**How it works:**
+
+1. User visits docs.athenius.io (protected route)
+2. If not authenticated, redirected to athenius.io/auth/login
+3. User logs in via Athenius Search
+4. Cookie is set with domain `.athenius.io` for cross-subdomain SSO
+5. User is redirected back to docs.athenius.io with active session
+
+**Environment Variables:**
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `NEXT_PUBLIC_COOKIE_DOMAIN` | Shared cookie domain | `.athenius.io` |
+| `NEXT_PUBLIC_AUTH_BASE_URL` | Athenius Search URL | `https://athenius.io` |
+| `NEXT_PUBLIC_SITE_URL` | This app's URL | `https://docs.athenius.io` |
+
+**Security:**
+
+- Redirect URLs are validated against a trusted domain whitelist
+- Only `athenius.io`, `docs.athenius.io`, and localhost are allowed
+- Open redirect attacks are prevented at both middleware and page level
 
 ---
 
