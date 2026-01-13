@@ -17,17 +17,11 @@ export async function createClient() {
         },
         setAll(cookiesToSet) {
           try {
+            // Set cookie with shared domain for SSO (server-side only)
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, {
                 ...options,
-                // Share cookies across subdomains for SSO
-                // All attributes must be set for cross-subdomain cookies to work
-                ...(COOKIE_DOMAIN && {
-                  domain: COOKIE_DOMAIN,
-                  sameSite: 'lax' as const,  // Required for cross-subdomain navigation
-                  secure: true,               // Required for HTTPS
-                  path: '/',                  // Ensure cookie is available site-wide
-                }),
+                ...(COOKIE_DOMAIN && { domain: COOKIE_DOMAIN }),
               })
             );
           } catch {
