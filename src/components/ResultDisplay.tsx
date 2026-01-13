@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -17,13 +17,6 @@ interface ResultDisplayProps {
 
 export function ResultDisplay({ content, sources, isLoading, isStreaming, error }: ResultDisplayProps) {
   const [showSources, setShowSources] = useState(false);
-
-  // Auto-expand sources when they arrive during streaming
-  useEffect(() => {
-    if (sources.length > 0 && isStreaming) {
-      setShowSources(true);
-    }
-  }, [sources.length, isStreaming]);
 
   // Show loading skeleton only when loading and no content yet
   if (isLoading && !content && sources.length === 0) {
