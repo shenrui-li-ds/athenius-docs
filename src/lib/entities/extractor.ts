@@ -148,11 +148,11 @@ export async function extractEntitiesFromFile(
           }
         }
         processedBatches++;
-      }
 
-      // Update progress after each parallel group
-      const progress = Math.round((processedBatches / totalBatches) * 100);
-      await updateEntityProgress(supabase, fileId, progress);
+        // Update progress after each batch (more granular updates)
+        const progress = Math.round((processedBatches / totalBatches) * 100);
+        await updateEntityProgress(supabase, fileId, progress);
+      }
     }
 
     // Update status to ready

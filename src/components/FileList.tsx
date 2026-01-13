@@ -7,7 +7,7 @@ interface FileListProps {
   files: FileUpload[];
   selectedIds: string[];
   onSelect: (fileId: string) => void;
-  onDelete: (fileId: string) => void;
+  onDelete: (fileId: string) => Promise<void> | void;
   onToggleEntities?: (fileId: string, enabled: boolean) => Promise<void>;
 }
 
@@ -40,12 +40,13 @@ interface FileItemProps {
   file: FileUpload;
   isSelected: boolean;
   onSelect: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<void> | void;
   onToggleEntities?: (fileId: string, enabled: boolean) => Promise<void>;
 }
 
 function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: FileItemProps) {
   const [isTogglingEntities, setIsTogglingEntities] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const isReady = file.status === 'ready';
   const isProcessing = file.status === 'processing' || file.status === 'pending';
@@ -68,17 +69,29 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
     }
   };
 
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div className="rounded-lg border border-[var(--border-color)]">
+    <div className={`rounded-lg border transition-all duration-200 ${isDeleting ? 'border-red-300 dark:border-red-800 opacity-60' : 'border-[var(--border-color)]'}`}>
       {/* Main file row */}
       <div
         className={`
           flex items-center gap-3 p-3 transition-colors rounded-t-lg
-          ${isSelected && isReady ? 'bg-[var(--accent-muted)]' : 'bg-[var(--card-background)]'}
-          ${isReady ? 'cursor-pointer hover:bg-[var(--hover-background)]' : ''}
-          ${isReady && onToggleEntities && !isEntitiesReady ? '' : 'rounded-b-lg'}
+          ${isDeleting ? 'bg-red-50 dark:bg-red-900/20' : isSelected && isReady ? 'bg-[var(--accent-muted)]' : 'bg-[var(--card-background)]'}
+          ${isReady && !isDeleting ? 'cursor-pointer hover:bg-[var(--hover-background)]' : ''}
+          ${isReady && onToggleEntities && !isEntitiesReady && !isDeleting ? '' : 'rounded-b-lg'}
         `}
-        onClick={isReady ? onSelect : undefined}
+        onClick={isReady && !isDeleting ? onSelect : undefined}
       >
         {/* Checkbox for selection */}
         <input
@@ -117,21 +130,30 @@ function FileItem({ file, isSelected, onSelect, onDelete, onToggleEntities }: Fi
 
         {/* Delete button */}
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="flex-shrink-0 p-1.5 text-[var(--text-tertiary)] hover:text-red-500 transition-colors rounded hover:bg-red-50 dark:hover:bg-red-900/20"
-          title="Delete file"
+          onClick={handleDelete}
+          disabled={isDeleting}
+          className={`flex-shrink-0 p-1.5 transition-colors rounded ${
+            isDeleting
+              ? 'text-red-500 cursor-wait'
+              : 'text-[var(--text-tertiary)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+          }`}
+          title={isDeleting ? 'Deleting...' : 'Delete file'}
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+          {isDeleting ? (
+            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          ) : (
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          )}
         </button>
       </div>
 
-      {/* Deep Analysis section - only show for ready files that don't have entities yet */}
-      {isReady && onToggleEntities && !isEntitiesReady && (
+      {/* Deep Analysis section - only show for ready files that don't have entities yet and not deleting */}
+      {isReady && onToggleEntities && !isEntitiesReady && !isDeleting && (
         <div className="border-t border-[var(--border-color)] bg-[var(--background)] px-3 py-2 rounded-b-lg">
           {isEntitiesProcessing ? (
             // Processing state - show progress
