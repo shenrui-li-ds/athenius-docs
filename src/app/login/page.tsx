@@ -1,33 +1,12 @@
-import Link from 'next/link';
-import { AuthForm } from '@/components/AuthForm';
-import { APP_ICON, APP_NAME } from '@/lib/branding';
+import { redirect } from 'next/navigation';
 
+/**
+ * Login page - redirects to Athenius Search for centralized auth
+ * This is a fallback; middleware should handle the redirect first
+ */
 export default function LoginPage() {
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[var(--background)]">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <img
-            src={APP_ICON}
-            alt={APP_NAME}
-            className="app-icon w-16 h-16 mx-auto mb-4"
-            style={{ filter: 'brightness(0) saturate(100%) invert(91%) sepia(4%) saturate(398%) hue-rotate(182deg) brightness(95%) contrast(87%)' }}
-          />
-          <h1 className="text-2xl font-bold">Welcome back</h1>
-          <p className="text-[var(--text-secondary)] mt-2">
-            Sign in to {APP_NAME}
-          </p>
-        </div>
+  const authBaseUrl = process.env.NEXT_PUBLIC_AUTH_BASE_URL || 'https://athenius.io';
+  const docsUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://docs.athenius.io';
 
-        <AuthForm mode="login" />
-
-        <p className="text-center text-sm text-[var(--text-secondary)]">
-          Don&apos;t have an account?{' '}
-          <Link href="/signup" className="text-blue-600 hover:underline">
-            Sign up
-          </Link>
-        </p>
-      </div>
-    </div>
-  );
+  redirect(`${authBaseUrl}/auth/login?redirectTo=${encodeURIComponent(docsUrl)}`);
 }

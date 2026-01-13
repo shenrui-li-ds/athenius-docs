@@ -1,6 +1,9 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
+// Cookie domain for cross-subdomain auth (e.g., '.athenius.io')
+const COOKIE_DOMAIN = process.env.NEXT_PUBLIC_COOKIE_DOMAIN || undefined;
+
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -15,7 +18,11 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, {
+                ...options,
+                // Share cookies across subdomains for SSO
+                domain: COOKIE_DOMAIN,
+              })
             );
           } catch {
             // The `setAll` method was called from a Server Component.

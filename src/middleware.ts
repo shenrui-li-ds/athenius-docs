@@ -4,6 +4,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 // Allowed tiers for accessing this app
 const ALLOWED_TIERS = ['pro', 'admin'];
 
+// Athenius Search URL for centralized auth
+const AUTH_BASE_URL = process.env.NEXT_PUBLIC_AUTH_BASE_URL || 'https://athenius.io';
+
+// Cookie domain for cross-subdomain auth (e.g., '.athenius.io')
+const COOKIE_DOMAIN = process.env.NEXT_PUBLIC_COOKIE_DOMAIN || undefined;
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -25,7 +31,11 @@ export async function middleware(request: NextRequest) {
             request,
           });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, {
+              ...options,
+              // Share cookies across subdomains for SSO
+              domain: COOKIE_DOMAIN,
+            })
           );
         },
       },
@@ -37,16 +47,19 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protected routes - redirect to login if not authenticated
+  // Protected routes - redirect to AS login if not authenticated
   const protectedPaths = ['/', '/library'];
   const isProtectedPath = protectedPaths.some(
     (path) => request.nextUrl.pathname === path || request.nextUrl.pathname.startsWith('/api/files')
   );
 
   if (isProtectedPath && !user) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    return NextResponse.redirect(url);
+    // Build the return URL (current page on docs.athenius.io)
+    const returnUrl = request.nextUrl.href;
+    // Redirect to Athenius Search login with redirectTo parameter
+    const loginUrl = new URL('/auth/login', AUTH_BASE_URL);
+    loginUrl.searchParams.set('redirectTo', returnUrl);
+    return NextResponse.redirect(loginUrl);
   }
 
   // Check user tier for protected paths (must be pro or admin)
@@ -66,11 +79,13 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Redirect to home if user is logged in and tries to access login/signup
-  if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    return NextResponse.redirect(url);
+  // Redirect login/signup to AS (Docs doesn't handle auth locally)
+  if (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup') {
+    const authPath = request.nextUrl.pathname === '/login' ? '/auth/login' : '/auth/signup';
+    const returnUrl = request.nextUrl.searchParams.get('redirectTo') || request.nextUrl.origin;
+    const authUrl = new URL(authPath, AUTH_BASE_URL);
+    authUrl.searchParams.set('redirectTo', returnUrl);
+    return NextResponse.redirect(authUrl);
   }
 
   return supabaseResponse;
