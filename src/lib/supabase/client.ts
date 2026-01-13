@@ -8,10 +8,14 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookieOptions: {
+      cookieOptions: COOKIE_DOMAIN ? {
         // Share cookies across subdomains for SSO
+        // All attributes must be set for cross-subdomain cookies to work
         domain: COOKIE_DOMAIN,
-      },
+        sameSite: 'lax' as const,  // Required for cross-subdomain navigation
+        secure: true,               // Required for HTTPS
+        path: '/',                  // Ensure cookie is available site-wide
+      } : undefined,
     }
   );
 }

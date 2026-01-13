@@ -21,7 +21,13 @@ export async function createClient() {
               cookieStore.set(name, value, {
                 ...options,
                 // Share cookies across subdomains for SSO
-                domain: COOKIE_DOMAIN,
+                // All attributes must be set for cross-subdomain cookies to work
+                ...(COOKIE_DOMAIN && {
+                  domain: COOKIE_DOMAIN,
+                  sameSite: 'lax' as const,  // Required for cross-subdomain navigation
+                  secure: true,               // Required for HTTPS
+                  path: '/',                  // Ensure cookie is available site-wide
+                }),
               })
             );
           } catch {

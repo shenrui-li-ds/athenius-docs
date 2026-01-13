@@ -50,18 +50,28 @@ Athenius Docs uses **shared authentication with Athenius Search** via Supabase. 
 4. Cookie is set with domain `.athenius.io` for cross-subdomain SSO
 5. User is redirected back to docs.athenius.io with active session
 
-**Environment Variables:**
+**Environment Variables (CRITICAL):**
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `NEXT_PUBLIC_COOKIE_DOMAIN` | Shared cookie domain | `.athenius.io` |
-| `NEXT_PUBLIC_AUTH_BASE_URL` | Athenius Search URL | `https://athenius.io` |
-| `NEXT_PUBLIC_SITE_URL` | This app's URL | `https://docs.athenius.io` |
+| Variable | Required On | Value | Description |
+|----------|-------------|-------|-------------|
+| `NEXT_PUBLIC_COOKIE_DOMAIN` | **Both apps** | `.athenius.io` | **Must** have leading dot for subdomain sharing |
+| `NEXT_PUBLIC_AUTH_BASE_URL` | Docs only | `https://athenius.io` | Where to redirect for login |
+| `NEXT_PUBLIC_SITE_URL` | Docs only | `https://docs.athenius.io` | Return URL after login |
+
+**Cookie Configuration:**
+
+Cross-subdomain SSO requires specific cookie attributes:
+- `domain: .athenius.io` - Leading dot allows subdomain access
+- `sameSite: lax` - Required for cross-subdomain navigation
+- `secure: true` - Required for HTTPS
+- `path: /` - Ensures site-wide availability
+
+If `NEXT_PUBLIC_COOKIE_DOMAIN` is not set, SSO will not work and users will be prompted to login repeatedly.
 
 **Security:**
 
 - Redirect URLs are validated against a trusted domain whitelist
-- Only `athenius.io`, `docs.athenius.io`, and localhost are allowed
+- Allowed: `athenius.io`, `www.athenius.io`, `docs.athenius.io`, localhost
 - Open redirect attacks are prevented at both middleware and page level
 
 ---
