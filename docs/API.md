@@ -5,9 +5,11 @@ External API for Athenius Search integration. All endpoints require authenticati
 ## Base URL
 
 ```
-Production: https://docs.athenius.ai/api/v1
-Development: http://localhost:3001/api/v1
+Production: https://docs.athenius.ai
+Development: http://localhost:3001
 ```
+
+All endpoints are prefixed with `/api/v1`. Set `DOCS_API_URL` to the base URL (without `/api/v1`).
 
 ## Authentication
 
@@ -377,6 +379,92 @@ All error responses follow this format:
 ## Rate Limits
 
 Currently no rate limits are enforced. This may change in the future.
+
+---
+
+## File Retention
+
+Files are automatically deleted after **24 hours** from upload. The `expires_at` field in file responses indicates the exact expiration time.
+
+**Important:**
+- Files cannot be extended or renewed
+- Re-upload the file if you need it after expiration
+- Entity extraction data is deleted along with the file
+- Deletion is permanent and cannot be recovered
+
+---
+
+## Retry & Backoff Guidance
+
+For robust integrations, implement retry logic with exponential backoff:
+
+| Status Code | Retry? | Guidance |
+|-------------|--------|----------|
+| 400 | No | Fix request parameters |
+| 401 | No | Check API key and X-User-ID |
+| 404 | No | Resource doesn't exist |
+| 429 | Yes | Rate limited (future) - back off |
+| 500 | Yes | Server error - retry with backoff |
+| 503 | Yes | Service unavailable - retry with backoff |
+
+**Recommended backoff strategy:**
+
+```typescript
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 3
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await fetch(url, options);
+
+    // Don't retry client errors (4xx except 429)
+    if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+      return response;
+    }
+
+    // Success or last attempt
+    if (response.ok || attempt === maxRetries) {
+      return response;
+    }
+
+    // Exponential backoff: 1s, 2s, 4s
+    const delay = Math.pow(2, attempt) * 1000;
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+
+  throw new Error('Max retries exceeded');
+}
+```
+
+**Processing status polling:**
+
+When waiting for file processing or entity extraction, poll with reasonable intervals:
+
+```typescript
+async function waitForProcessing(fileId: string, userId: string): Promise<void> {
+  const maxAttempts = 60; // 5 minutes max
+  const pollInterval = 5000; // 5 seconds
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const response = await fetch(`${DOCS_API_URL}/api/v1/files/${fileId}`, {
+      headers: {
+        'Authorization': `Bearer ${ATHENIUS_API_KEY}`,
+        'X-User-ID': userId,
+      },
+    });
+
+    const { file } = await response.json();
+
+    if (file.status === 'ready') return;
+    if (file.status === 'error') throw new Error(file.error_message);
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error('Processing timeout');
+}
+```
 
 ---
 

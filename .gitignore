@@ -51,3 +51,7 @@ public/noun-owl-ok.png
 public/noun-owl-ok.svg
 public/noun-owl-oksana.png
 public/noun-owl-oksana.svg
+
+# Mock files
+/mock
+/verify
