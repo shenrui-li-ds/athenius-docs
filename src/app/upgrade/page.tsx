@@ -1,17 +1,15 @@
 'use client';
 
-import Link from 'next/link';
 import { APP_ICON, APP_NAME } from '@/lib/branding';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
 
 export default function UpgradePage() {
-  const router = useRouter();
 
   const handleSignOut = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push('/login');
+    // Redirect to AS login page directly
+    window.location.href = 'https://athenius.io/auth/login?redirectTo=' + encodeURIComponent('https://docs.athenius.io');
   };
 
   return (
@@ -32,19 +30,19 @@ export default function UpgradePage() {
         </p>
 
         <div className="space-y-3">
-          <a
-            href="https://search.athenius.ai/pricing"
-            className="block w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          <button
+            disabled
+            className="block w-full px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
           >
-            Upgrade to Pro
-          </a>
+            Upgrade to Pro (Coming Soon)
+          </button>
 
-          <Link
-            href="https://search.athenius.ai"
+          <a
+            href="https://athenius.io"
             className="block w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
             Back to Athenius Search
-          </Link>
+          </a>
         </div>
 
         <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
@@ -52,8 +50,9 @@ export default function UpgradePage() {
             Already upgraded? Sign out and back in to refresh your subscription status.
           </p>
           <button
+            type="button"
             onClick={handleSignOut}
-            className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 underline"
+            className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 underline cursor-pointer"
           >
             Sign out
           </button>
