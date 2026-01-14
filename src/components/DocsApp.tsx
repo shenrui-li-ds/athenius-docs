@@ -8,6 +8,7 @@ import { FileList } from './FileList';
 import { QueryInput } from './QueryInput';
 import { ResultDisplay } from './ResultDisplay';
 import { UserMenu } from './UserMenu';
+import { ThemeToggle } from './ThemeToggle';
 import { APP_ICON, APP_NAME } from '@/lib/branding';
 
 interface DocsAppProps {
@@ -260,11 +261,13 @@ export function DocsApp({ user }: DocsAppProps) {
               src={APP_ICON}
               alt={APP_NAME}
               className="app-icon w-8 h-8"
-              style={{ filter: 'brightness(0) saturate(100%) invert(91%) sepia(4%) saturate(398%) hue-rotate(182deg) brightness(95%) contrast(87%)' }}
             />
             <h1 className="app-title text-xl">{APP_NAME}</h1>
           </div>
-          <UserMenu user={user} />
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <UserMenu user={user} />
+          </div>
         </div>
       </header>
 

@@ -1,11 +1,19 @@
 import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 
 // Cookie domain for cross-subdomain auth (e.g., '.athenius.io')
 const COOKIE_DOMAIN = process.env.NEXT_PUBLIC_COOKIE_DOMAIN || undefined;
 
+// Helper to determine if we should use shared domain (not for localhost)
+function shouldUseSharedDomain(host: string | null): boolean {
+  return COOKIE_DOMAIN !== undefined && host !== null && !host.startsWith('localhost');
+}
+
 export async function createClient() {
   const cookieStore = await cookies();
+  const headerStore = await headers();
+  const host = headerStore.get('host');
+  const useSharedDomain = shouldUseSharedDomain(host);
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,11 +25,11 @@ export async function createClient() {
         },
         setAll(cookiesToSet) {
           try {
-            // Set cookie with shared domain for SSO (server-side only)
+            // Set cookie with shared domain for SSO (skip for localhost)
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, {
                 ...options,
-                ...(COOKIE_DOMAIN && { domain: COOKIE_DOMAIN }),
+                ...(useSharedDomain && COOKIE_DOMAIN && { domain: COOKIE_DOMAIN }),
               })
             );
           } catch {

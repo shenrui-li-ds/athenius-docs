@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-:root {
+:root,
+html.light {
   --background: #ffffff;
   --foreground: #171717;
   --text-secondary: #6b7280;
