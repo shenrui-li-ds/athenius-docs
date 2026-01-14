@@ -4,14 +4,6 @@ import { APP_ICON, APP_NAME } from '@/lib/branding';
 import { createClient } from '@/lib/supabase/client';
 
 export default function UpgradePage() {
-
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    // Redirect to AS login page directly
-    window.location.href = 'https://athenius.io/auth/login?redirectTo=' + encodeURIComponent('https://docs.athenius.io');
-  };
-
   return (
     <div className="min-h-screen bg-[var(--background)] flex items-center justify-center p-4">
       <div className="max-w-md w-full text-center">
@@ -49,13 +41,17 @@ export default function UpgradePage() {
           <p className="text-xs text-gray-500 dark:text-gray-500 mb-3">
             Already upgraded? Sign out and back in to refresh your subscription status.
           </p>
-          <button
-            type="button"
-            onClick={handleSignOut}
+          <a
+            href="https://athenius.io/auth/login?redirectTo=https%3A%2F%2Fdocs.athenius.io"
+            onClick={() => {
+              // Try to sign out before navigating (fire and forget)
+              const supabase = createClient();
+              supabase.auth.signOut().catch(() => {});
+            }}
             className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 underline cursor-pointer"
           >
             Sign out
-          </button>
+          </a>
         </div>
       </div>
     </div>
